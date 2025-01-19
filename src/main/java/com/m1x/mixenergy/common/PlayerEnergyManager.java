@@ -23,7 +23,7 @@ public class PlayerEnergyManager {
     private static final float BLOCK_PLACE_ENERGY_COST = 1.0f;
     private static final float ATTACK_ENERGY_COST = 3.0f;
 
-    private static final int SLOWDOWN_DURATION = 60;
+    private static final int SLOWDOWN_DURATION = 80;
     private static boolean wasSprintingLastTick = false;
 
     private static final float BASE_ENERGY_REGEN_RATE = 1.0f;
@@ -68,9 +68,8 @@ public class PlayerEnergyManager {
                 wasSprintingLastTick = false;
             }
 
-            boolean hasSlowdownEffect = player.hasEffect(MobEffects.MOVEMENT_SLOWDOWN);
-
-            if (!hasSlowdownEffect && canRegenerate(currentTime, energyData)) {
+            // Проверяем, прошло ли достаточно времени с последнего действия для регенерации
+            if (canRegenerate(currentTime, energyData)) {
                 if (currentTime - energyData.getLastRegenTime() >= 120) {
                     float regenMultiplier = calculateRegenMultiplier(currentTime, energyData);
                     float regenAmount = BASE_ENERGY_REGEN_RATE +
@@ -86,7 +85,7 @@ public class PlayerEnergyManager {
         }
     }
 
-    private static void syncEnergyToClient(ServerPlayer player, PlayerEnergyData energyData) {
+    public static void syncEnergyToClient(ServerPlayer player, PlayerEnergyData energyData) {
         NetworkHandler.INSTANCE.send(
                 PacketDistributor.PLAYER.with(() -> player),
                 new EnergyUpdatePacket(energyData.getEnergy(), energyData.getMaxEnergy())
@@ -124,6 +123,7 @@ public class PlayerEnergyManager {
     @SubscribeEvent
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
         Player player = event.getPlayer();
+        if (!isValidGameMode(player)) return;
         if (player instanceof ServerPlayer serverPlayer) {
             PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
             if (energyData != null) {
@@ -140,6 +140,7 @@ public class PlayerEnergyManager {
     @SubscribeEvent
     public static void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            if (!isValidGameMode(serverPlayer)) return;
             PlayerEnergyData energyData = serverPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
             if (energyData != null) {
                 if (energyData.getEnergy() >= BLOCK_PLACE_ENERGY_COST) {
@@ -155,6 +156,7 @@ public class PlayerEnergyManager {
     @SubscribeEvent
     public static void onLivingAttack(LivingAttackEvent event) {
         if (event.getSource().getEntity() instanceof ServerPlayer serverPlayer) {
+            if (!isValidGameMode(serverPlayer)) return;
             consumeEnergy(serverPlayer, ATTACK_ENERGY_COST);
         }
     }

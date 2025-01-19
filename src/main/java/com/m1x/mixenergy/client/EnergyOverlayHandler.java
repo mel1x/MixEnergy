@@ -3,16 +3,11 @@ package com.m1x.mixenergy.client;
 import com.m1x.mixenergy.network.EnergyActionPacket;
 import com.m1x.mixenergy.network.NetworkHandler;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.FloatArgumentType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.commands.Commands;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RegisterClientCommandsEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -41,7 +36,7 @@ public class EnergyOverlayHandler {
     private static final ResourceLocation[] CENTER_ANIMATION = new ResourceLocation[18];
     private static boolean isAnimating = false;
     private static long animationStartTime = 0;
-    private static final int ANIMATION_FRAME_DURATION = 35; // миллисекунды на кадр
+    private static final int ANIMATION_FRAME_DURATION = 35;
     private static final int TOTAL_ANIMATION_DURATION = ANIMATION_FRAME_DURATION * 18;
 
     static {
@@ -97,28 +92,7 @@ public class EnergyOverlayHandler {
 
     public static void setMaxEnergyValue(float value) {
         MAX_ENERGY_VALUE = value;
-        // Убеждаемся, что текущая энергия не превышает новый максимум
         ENERGY_VALUE = Math.min(ENERGY_VALUE, MAX_ENERGY_VALUE);
-    }
-
-    @SubscribeEvent
-    public static void onRegisterCommands(RegisterClientCommandsEvent event) {
-        CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
-
-        dispatcher.register(Commands.literal("setEnergy")
-                .requires(source -> source.hasPermission(2))
-                .then(Commands.argument("value", FloatArgumentType.floatArg(0))
-                        .executes(context -> {
-                            float newValue = FloatArgumentType.getFloat(context, "value");
-                            if (Minecraft.getInstance().getConnection() != null) {
-                                NetworkHandler.INSTANCE.sendToServer(
-                                        new EnergyActionPacket(EnergyActionPacket.ActionType.REGENERATE, newValue)
-                                );
-                            } else {
-                                EnergyOverlayHandler.setEnergyValue(newValue);
-                            }
-                            return 1;
-                        })));
     }
 
     @SubscribeEvent
@@ -142,22 +116,20 @@ public class EnergyOverlayHandler {
             int maxFullBars = (int) (MAX_ENERGY_VALUE / ENERGY_BAR_WIDTH);
             int maxPartialPixels = (int) (MAX_ENERGY_VALUE % ENERGY_BAR_WIDTH);
 
-            int totalWidth = CENTER_WIDTH +
-                    (maxFullBars * 2 * ENERGY_BAR_WIDTH) +
-                    (maxPartialPixels * 2) +
-                    (2 * FRAME_WIDTH);
-
+            int totalWidth = CENTER_WIDTH + (maxFullBars * 2 * ENERGY_BAR_WIDTH) + (maxPartialPixels * 2) + (2 * FRAME_WIDTH);
             int startX = (screenWidth - totalWidth) / 2;
             int startY = screenHeight - 50;
             int centerX = startX + FRAME_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
 
-            int initialX = startX;
-            int leftEnergyEndX = centerX;
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
 
+            // Рендерим левую рамку
             RenderSystem.setShaderTexture(0, LEFT_FRAME);
             guiGraphics.blit(LEFT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
             startX += FRAME_WIDTH;
 
+            // Рендерим левый фон
             for (int i = 0; i < maxFullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_LEFT);
                 guiGraphics.blit(ENERGY_BAR_BG_LEFT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -171,7 +143,8 @@ public class EnergyOverlayHandler {
                         maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
-            startX = leftEnergyEndX - (fullBars * ENERGY_BAR_WIDTH) - partialPixels;
+            // Рендерим левую энергию
+            startX = centerX - (fullBars * ENERGY_BAR_WIDTH) - partialPixels;
 
             if (partialPixels > 0) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_LEFT);
@@ -188,12 +161,12 @@ public class EnergyOverlayHandler {
                         ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
+            // Рендерим центр
             startX = centerX;
             renderCenter(guiGraphics, startX, startY);
             startX += CENTER_WIDTH;
 
-            int afterCenterX = startX;
-
+            // Рендерим правый фон
             for (int i = 0; i < maxFullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_RIGHT);
                 guiGraphics.blit(ENERGY_BAR_BG_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -207,8 +180,8 @@ public class EnergyOverlayHandler {
                         maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
-            startX = afterCenterX;
-
+            // Рендерим правую энергию
+            startX = centerX + CENTER_WIDTH;
             for (int i = 0; i < fullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_RIGHT);
                 guiGraphics.blit(ENERGY_BAR_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -221,8 +194,9 @@ public class EnergyOverlayHandler {
                 guiGraphics.blit(ENERGY_BAR_RIGHT, startX, startY, 0, 0,
                         partialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
-            startX = initialX + totalWidth - FRAME_WIDTH;
 
+            // Рендерим правую рамку
+            startX = centerX + CENTER_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
             RenderSystem.setShaderTexture(0, RIGHT_FRAME);
             guiGraphics.blit(RIGHT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
         }
