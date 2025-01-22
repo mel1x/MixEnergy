@@ -36,7 +36,6 @@ public class PlayerEnergyManager {
         if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
             Player player = event.player;
 
-            // Проверяем, что мы на серверной стороне
             if (event.side != LogicalSide.SERVER) {
                 return;
             }
@@ -68,7 +67,6 @@ public class PlayerEnergyManager {
                 wasSprintingLastTick = false;
             }
 
-            // Проверяем, прошло ли достаточно времени с последнего действия для регенерации
             if (canRegenerate(currentTime, energyData)) {
                 if (currentTime - energyData.getLastRegenTime() >= 120) {
                     float regenMultiplier = calculateRegenMultiplier(currentTime, energyData);
@@ -80,7 +78,6 @@ public class PlayerEnergyManager {
                 }
             }
 
-            // Синхронизируем данные с клиентом
             syncEnergyToClient(serverPlayer, energyData);
         }
     }

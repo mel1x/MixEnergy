@@ -39,6 +39,16 @@ public class EnergyOverlayHandler {
     private static final int ANIMATION_FRAME_DURATION = 35;
     private static final int TOTAL_ANIMATION_DURATION = ANIMATION_FRAME_DURATION * 18;
 
+    private static float lastEnergyValue = ENERGY_VALUE;
+    private static float overlayAlpha = 0.0f;
+    private static long lastEnergyChangeTime = 0;
+    private static final float FADE_DURATION = 2000.0f;
+    private static final float FADE_SPEED = 0.003f;
+    private static final float MIN_ALPHA = 0.0f;
+    private static final float MAX_ALPHA = 1.0f;
+    private static float targetAlpha = 0.0f;
+    private static final float APPEAR_SPEED = 0.003f;
+
     static {
         for (int i = 0; i < 18; i++) {
             CENTER_ANIMATION[i] = new ResourceLocation("mixenergy",
@@ -82,17 +92,60 @@ public class EnergyOverlayHandler {
         return MAX_ENERGY_VALUE;
     }
 
-    public static void setEnergyValue(float value) {
-        float oldValue = ENERGY_VALUE;
-        ENERGY_VALUE = Math.max(0, Math.min(value, MAX_ENERGY_VALUE));
-        if (oldValue < MAX_ENERGY_VALUE && ENERGY_VALUE >= MAX_ENERGY_VALUE) {
-            playCenterAnimation();
+    private static void updateAlpha() {
+        long currentTime = System.currentTimeMillis();
+        long timeSinceChange = currentTime - lastEnergyChangeTime;
+
+        // Проверяем, изменяется ли энергия (восстановление/трата)
+        if (ENERGY_VALUE != lastEnergyValue) {
+            lastEnergyChangeTime = currentTime;
+            targetAlpha = MAX_ALPHA;
+            lastEnergyValue = ENERGY_VALUE;
+        }
+
+        // Если энергия равна 0, держим бар видимым
+        if (ENERGY_VALUE <= 0) {
+            targetAlpha = MAX_ALPHA;
+        } else if (timeSinceChange > FADE_DURATION) {
+            targetAlpha = MIN_ALPHA;
+        }
+
+        // Плавное изменение прозрачности с одинаковой скоростью для появления и исчезновения
+        if (Math.abs(overlayAlpha - targetAlpha) > 0.001f) {
+            float speed = FADE_SPEED;
+            if (overlayAlpha < targetAlpha) {
+                overlayAlpha = Math.min(overlayAlpha + speed, targetAlpha);
+            } else {
+                overlayAlpha = Math.max(overlayAlpha - speed, targetAlpha);
+            }
         }
     }
 
+    public static void setEnergyValue(float value) {
+        float oldValue = ENERGY_VALUE;
+        ENERGY_VALUE = Math.max(0, Math.min(value, MAX_ENERGY_VALUE));
+        
+        if (oldValue != ENERGY_VALUE) {
+            lastEnergyChangeTime = System.currentTimeMillis();
+            targetAlpha = MAX_ALPHA;
+        }
+        
+        if (oldValue < MAX_ENERGY_VALUE && ENERGY_VALUE >= MAX_ENERGY_VALUE) {
+            playCenterAnimation();
+        }
+        
+        lastEnergyValue = oldValue;
+    }
+
     public static void setMaxEnergyValue(float value) {
+        float oldMaxValue = MAX_ENERGY_VALUE;
         MAX_ENERGY_VALUE = value;
         ENERGY_VALUE = Math.min(ENERGY_VALUE, MAX_ENERGY_VALUE);
+        
+        // Запускаем анимацию только если энергия достигла максимума
+        if (ENERGY_VALUE >= MAX_ENERGY_VALUE && oldMaxValue != MAX_ENERGY_VALUE) {
+            playCenterAnimation();
+        }
     }
 
     @SubscribeEvent
@@ -102,6 +155,13 @@ public class EnergyOverlayHandler {
 
         GameType gameMode = mc.gameMode.getPlayerMode();
         if (gameMode != GameType.SURVIVAL && gameMode != GameType.ADVENTURE) {
+            return;
+        }
+
+        updateAlpha();
+        
+        // Если оверлей полностью прозрачный и энергия не равна 0, не рендерим его
+        if (overlayAlpha <= MIN_ALPHA && ENERGY_VALUE > 0) {
             return;
         }
 
@@ -118,11 +178,15 @@ public class EnergyOverlayHandler {
 
             int totalWidth = CENTER_WIDTH + (maxFullBars * 2 * ENERGY_BAR_WIDTH) + (maxPartialPixels * 2) + (2 * FRAME_WIDTH);
             int startX = (screenWidth - totalWidth) / 2;
-            int startY = screenHeight - 50;
+            int startY = screenHeight - 51;
             int centerX = startX + FRAME_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
 
+            // Сохраняем начальные позиции
+            int initialX = startX;
+            int leftEnergyEndX = centerX;
+
             RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
 
             // Рендерим левую рамку
             RenderSystem.setShaderTexture(0, LEFT_FRAME);
@@ -144,7 +208,7 @@ public class EnergyOverlayHandler {
             }
 
             // Рендерим левую энергию
-            startX = centerX - (fullBars * ENERGY_BAR_WIDTH) - partialPixels;
+            startX = leftEnergyEndX - (fullBars * ENERGY_BAR_WIDTH) - partialPixels;
 
             if (partialPixels > 0) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_LEFT);
@@ -166,6 +230,9 @@ public class EnergyOverlayHandler {
             renderCenter(guiGraphics, startX, startY);
             startX += CENTER_WIDTH;
 
+            // Сохраняем позицию после центра для фона
+            int afterCenterX = startX;
+
             // Рендерим правый фон
             for (int i = 0; i < maxFullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_RIGHT);
@@ -180,8 +247,10 @@ public class EnergyOverlayHandler {
                         maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
+            // Возвращаемся к позиции после центра для активной энергии
+            startX = afterCenterX;
+
             // Рендерим правую энергию
-            startX = centerX + CENTER_WIDTH;
             for (int i = 0; i < fullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_RIGHT);
                 guiGraphics.blit(ENERGY_BAR_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -196,9 +265,13 @@ public class EnergyOverlayHandler {
             }
 
             // Рендерим правую рамку
-            startX = centerX + CENTER_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
+            startX = initialX + totalWidth - FRAME_WIDTH;
             RenderSystem.setShaderTexture(0, RIGHT_FRAME);
             guiGraphics.blit(RIGHT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
+
+            // Восстанавливаем нормальную прозрачность
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+            RenderSystem.disableBlend();
         }
     }
 }

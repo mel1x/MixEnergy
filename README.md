@@ -3,7 +3,7 @@
 The **MixEnergy Mod** introduces a unique mechanic to Minecraft: **player energy**. This energy system adds a new layer of challenge and strategy by making energy a consumable resource for various actions. 
 
 <p align="center">
-  <img src="https://cdn.modrinth.com/data/cached_images/5bb01f6afa4eedb51c42ca0806490a3c2731ce0b.gif" />
+  <img src="https://cdn.modrinth.com/data/fFAmfqIe/images/e0d938047412cab349c32a9f334333fe9fa3006d.gif" />
 </p>
 
 ## Key Features
