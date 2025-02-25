@@ -1,11 +1,14 @@
 package com.m1x.mixenergy.common;
 
+import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import com.m1x.mixenergy.network.EnergyActionPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -15,6 +18,11 @@ import com.m1x.mixenergy.network.EnergyUpdatePacket;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraftforge.fml.LogicalSide;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 @Mod.EventBusSubscriber(modid = "mixenergy")
 public class PlayerEnergyManager {
@@ -30,6 +38,8 @@ public class PlayerEnergyManager {
     private static final float MAX_ENERGY_REGEN_RATE = 1.8f;
     private static final int REGEN_DELAY_TICKS = 30;
     private static final int MAX_REGEN_BOOST_TIME = 3000;
+
+    private static final Map<UUID, Float> playerMaxEnergyMap = new HashMap<>();
 
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent event) {
@@ -118,7 +128,43 @@ public class PlayerEnergyManager {
     }
 
     @SubscribeEvent
+    public static void onPlayerLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        if (event.getSide() != LogicalSide.SERVER) {
+            return;
+        }
+        
+        Player player = event.getEntity();
+        if (!isValidGameMode(player)) return;
+        
+        if (player instanceof ServerPlayer serverPlayer) {
+            player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                energyData.setLastActionTime(System.currentTimeMillis());
+            });
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getSide() != LogicalSide.SERVER) {
+            return;
+        }
+        
+        Player player = event.getEntity();
+        if (!isValidGameMode(player)) return;
+        
+        if (player instanceof ServerPlayer serverPlayer) {
+            player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                energyData.setLastActionTime(System.currentTimeMillis());
+            });
+        }
+    }
+
+    @SubscribeEvent
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
+        if (!MixEnergyConfig.ENERGY_COST_FOR_BREAKING_BLOCKS.get()) {
+            return;
+        }
+        
         Player player = event.getPlayer();
         if (!isValidGameMode(player)) return;
         if (player instanceof ServerPlayer serverPlayer) {
@@ -136,6 +182,10 @@ public class PlayerEnergyManager {
 
     @SubscribeEvent
     public static void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
+        if (!MixEnergyConfig.ENERGY_COST_FOR_BREAKING_BLOCKS.get()) {
+            return;
+        }
+        
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
             if (!isValidGameMode(serverPlayer)) return;
             PlayerEnergyData energyData = serverPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
@@ -154,7 +204,41 @@ public class PlayerEnergyManager {
     public static void onLivingAttack(LivingAttackEvent event) {
         if (event.getSource().getEntity() instanceof ServerPlayer serverPlayer) {
             if (!isValidGameMode(serverPlayer)) return;
+            
+            serverPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                energyData.setLastActionTime(System.currentTimeMillis());
+            });
+
+            if (!MixEnergyConfig.ENERGY_COST_FOR_ATTACKS.get()) {
+                return;
+            }
+            
             consumeEnergy(serverPlayer, ATTACK_ENERGY_COST);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerDeath(LivingDeathEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                playerMaxEnergyMap.put(player.getUUID(), energyData.getMaxEnergy());
+            });
+        }
+    }
+    
+    @SubscribeEvent
+    public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            UUID playerUUID = player.getUUID();
+
+            if (playerMaxEnergyMap.containsKey(playerUUID)) {
+                float maxEnergy = playerMaxEnergyMap.get(playerUUID);
+                
+                player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                    energyData.setMaxEnergy(maxEnergy);
+                    syncEnergyToClient(player, energyData);
+                });
+            }
         }
     }
 
@@ -165,11 +249,11 @@ public class PlayerEnergyManager {
     }
 
     private static boolean canRegenerate(long currentTime, PlayerEnergyData energyData) {
-        return (currentTime - energyData.getLastActionTime()) > REGEN_DELAY_TICKS * 50;
+        return (currentTime - energyData.getLastActionTime()) > MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get();
     }
 
     private static float calculateRegenMultiplier(long currentTime, PlayerEnergyData energyData) {
-        long idleTime = currentTime - energyData.getLastActionTime() - (REGEN_DELAY_TICKS * 50);
+        long idleTime = currentTime - energyData.getLastActionTime() - MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get();
         if (idleTime <= 0) return 0;
         return Math.min((float) idleTime / MAX_REGEN_BOOST_TIME, 1.0f);
     }

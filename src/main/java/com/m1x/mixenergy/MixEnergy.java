@@ -2,7 +2,10 @@ package com.m1x.mixenergy;
 
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import com.m1x.mixenergy.common.commands.EnergyCommands;
+import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import com.m1x.mixenergy.network.NetworkHandler;
+import com.mojang.brigadier.CommandDispatcher;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -15,6 +18,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 public class MixEnergy {
     public MixEnergy() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+
+        MixEnergyConfig.register();
+        
         NetworkHandler.register();
         MinecraftForge.EVENT_BUS.register(PlayerEnergyManager.class);
         MinecraftForge.EVENT_BUS.register(this);

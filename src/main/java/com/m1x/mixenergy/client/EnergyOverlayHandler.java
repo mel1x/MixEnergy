@@ -6,6 +6,8 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
@@ -96,21 +98,18 @@ public class EnergyOverlayHandler {
         long currentTime = System.currentTimeMillis();
         long timeSinceChange = currentTime - lastEnergyChangeTime;
 
-        // Проверяем, изменяется ли энергия (восстановление/трата)
         if (ENERGY_VALUE != lastEnergyValue) {
             lastEnergyChangeTime = currentTime;
             targetAlpha = MAX_ALPHA;
             lastEnergyValue = ENERGY_VALUE;
         }
 
-        // Если энергия равна 0, держим бар видимым
         if (ENERGY_VALUE <= 0) {
             targetAlpha = MAX_ALPHA;
         } else if (timeSinceChange > FADE_DURATION) {
             targetAlpha = MIN_ALPHA;
         }
 
-        // Плавное изменение прозрачности с одинаковой скоростью для появления и исчезновения
         if (Math.abs(overlayAlpha - targetAlpha) > 0.001f) {
             float speed = FADE_SPEED;
             if (overlayAlpha < targetAlpha) {
@@ -142,7 +141,6 @@ public class EnergyOverlayHandler {
         MAX_ENERGY_VALUE = value;
         ENERGY_VALUE = Math.min(ENERGY_VALUE, MAX_ENERGY_VALUE);
         
-        // Запускаем анимацию только если энергия достигла максимума
         if (ENERGY_VALUE >= MAX_ENERGY_VALUE && oldMaxValue != MAX_ENERGY_VALUE) {
             playCenterAnimation();
         }
@@ -159,8 +157,7 @@ public class EnergyOverlayHandler {
         }
 
         updateAlpha();
-        
-        // Если оверлей полностью прозрачный и энергия не равна 0, не рендерим его
+
         if (overlayAlpha <= MIN_ALPHA && ENERGY_VALUE > 0) {
             return;
         }
@@ -178,22 +175,22 @@ public class EnergyOverlayHandler {
 
             int totalWidth = CENTER_WIDTH + (maxFullBars * 2 * ENERGY_BAR_WIDTH) + (maxPartialPixels * 2) + (2 * FRAME_WIDTH);
             int startX = (screenWidth - totalWidth) / 2;
-            int startY = screenHeight - 51;
+            
+            int yOffset = calculateYOffset(mc.player);
+            int startY = screenHeight - 51 - yOffset;
+            
             int centerX = startX + FRAME_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
 
-            // Сохраняем начальные позиции
             int initialX = startX;
             int leftEnergyEndX = centerX;
 
             RenderSystem.enableBlend();
             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
 
-            // Рендерим левую рамку
             RenderSystem.setShaderTexture(0, LEFT_FRAME);
             guiGraphics.blit(LEFT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
             startX += FRAME_WIDTH;
 
-            // Рендерим левый фон
             for (int i = 0; i < maxFullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_LEFT);
                 guiGraphics.blit(ENERGY_BAR_BG_LEFT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -207,7 +204,6 @@ public class EnergyOverlayHandler {
                         maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
-            // Рендерим левую энергию
             startX = leftEnergyEndX - (fullBars * ENERGY_BAR_WIDTH) - partialPixels;
 
             if (partialPixels > 0) {
@@ -225,15 +221,12 @@ public class EnergyOverlayHandler {
                         ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
-            // Рендерим центр
             startX = centerX;
             renderCenter(guiGraphics, startX, startY);
             startX += CENTER_WIDTH;
 
-            // Сохраняем позицию после центра для фона
             int afterCenterX = startX;
 
-            // Рендерим правый фон
             for (int i = 0; i < maxFullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_RIGHT);
                 guiGraphics.blit(ENERGY_BAR_BG_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -247,10 +240,8 @@ public class EnergyOverlayHandler {
                         maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
-            // Возвращаемся к позиции после центра для активной энергии
             startX = afterCenterX;
 
-            // Рендерим правую энергию
             for (int i = 0; i < fullBars; i++) {
                 RenderSystem.setShaderTexture(0, ENERGY_BAR_RIGHT);
                 guiGraphics.blit(ENERGY_BAR_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
@@ -264,14 +255,33 @@ public class EnergyOverlayHandler {
                         partialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
             }
 
-            // Рендерим правую рамку
             startX = initialX + totalWidth - FRAME_WIDTH;
             RenderSystem.setShaderTexture(0, RIGHT_FRAME);
             guiGraphics.blit(RIGHT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
 
-            // Восстанавливаем нормальную прозрачность
             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
             RenderSystem.disableBlend();
         }
+    }
+
+    private static int calculateYOffset(Player player) {
+        int offset = 0;
+        
+        // Проверяем наличие брони
+        if (player.getArmorValue() > 0) {
+            offset += 10;
+        }
+        
+        if (player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) || player.getAirSupply() < player.getMaxAirSupply()) {
+            offset += 10;
+        }
+
+        if (player.hasEffect(MobEffects.ABSORPTION) || 
+            player.hasEffect(MobEffects.HEALTH_BOOST) || 
+            player.getAbsorptionAmount() > 0) {
+            offset += 10;
+        }
+        
+        return offset;
     }
 }

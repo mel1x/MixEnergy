@@ -1,5 +1,6 @@
 package com.m1x.mixenergy.common;
 
+import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.capabilities.AutoRegisterCapability;
@@ -12,8 +13,9 @@ public class PlayerEnergyData {
     private long lastRegenTime;
 
     public PlayerEnergyData() {
-        this.energy = 27.0f;
-        this.maxEnergy = 27.0f;
+        float defaultMaxEnergy = MixEnergyConfig.DEFAULT_MAX_ENERGY.get().floatValue();
+        this.energy = defaultMaxEnergy;
+        this.maxEnergy = defaultMaxEnergy;
         this.lastActionTime = 0;
         this.lastRegenTime = 0;
     }
