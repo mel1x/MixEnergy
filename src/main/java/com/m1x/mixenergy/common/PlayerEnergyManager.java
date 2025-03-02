@@ -33,8 +33,10 @@ public class PlayerEnergyManager {
     private static final float BLOCK_PLACE_ENERGY_COST = 1.0f;
     private static final float ATTACK_ENERGY_COST = 3.0f;
 
-    private static final int SLOWDOWN_DURATION = 80;
-    private static boolean wasSprintingLastTick = false;
+    private static final int SLOWDOWN_DURATION = 100;
+    private static final int SLOWDOWN_AMPLIFIER = 2;
+    private static final Map<UUID, Boolean> playerSprintingMap = new HashMap<>();
+    private static final Map<UUID, Long> sprintCooldownMap = new HashMap<>(); // Track when players can sprint again
 
     private static final float BASE_ENERGY_REGEN_RATE = 1.0f;
     private static final float MAX_ENERGY_REGEN_RATE = 1.8f;
@@ -44,6 +46,9 @@ public class PlayerEnergyManager {
     private static final Map<UUID, Float> playerMaxEnergyMap = new HashMap<>();
     private static final Map<UUID, Integer> pendingDimensionSyncs = new HashMap<>();
     private static final Map<UUID, CompoundTag> playerEnergyDataMap = new HashMap<>();
+
+    private static final float EPSILON = 0.001f; // Small epsilon for floating point comparisons
+    private static final float SPRINT_ENERGY_THRESHOLD = 0.5f; // Higher threshold to catch energy depletion earlier
 
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent event) {
@@ -72,33 +77,111 @@ public class PlayerEnergyManager {
             }
 
             long currentTime = System.currentTimeMillis();
-
+            float currentEnergy = energyData.getEnergy();
+            
+            // FORCIBLY CHECK AND HANDLE SPRINTING
+            // This direct approach should catch all cases including when energy depletes in one go
             if (player.isSprinting()) {
-                if (energyData.getEnergy() >= SPRINT_ENERGY_COST) {
-                    consumeEnergy(serverPlayer, SPRINT_ENERGY_COST);
-                    energyData.setLastActionTime(currentTime);
-                    player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
-                } else {
+                // If energy is below threshold or player is on cooldown, force stop sprint and apply slowness
+                UUID playerUUID = player.getUUID();
+                long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
+                
+                if (currentEnergy < SPRINT_ENERGY_THRESHOLD || currentTime < sprintCooldownEnd) {
+                    // AGGRESSIVE SPRINT STOPPING
                     player.setSprinting(false);
-                    player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, SLOWDOWN_DURATION, 1, false, false));
+                    // Force apply slowness with particle effects
+                    MobEffectInstance slowness = new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 
+                                                                     SLOWDOWN_DURATION, 
+                                                                     SLOWDOWN_AMPLIFIER, 
+                                                                     false, // ambient
+                                                                     true,  // visible
+                                                                     true); // show icon
+                    player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                    player.addEffect(slowness);
+                    
+                    // Network sync to ensure client sees the sprint stop
+                    NetworkHandler.INSTANCE.send(
+                        PacketDistributor.PLAYER.with(() -> serverPlayer),
+                        new EnergyUpdatePacket(energyData.getEnergy(), energyData.getMaxEnergy())
+                    );
+                    
+                    // Mark this player as no longer sprinting and set cooldown if energy is too low
+                    playerSprintingMap.put(playerUUID, false);
+                    if (currentEnergy < SPRINT_ENERGY_THRESHOLD) {
+                        // Set cooldown equal to regeneration delay
+                        sprintCooldownMap.put(playerUUID, currentTime + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
+                    }
+                } else {
+                    // Consume energy for sprinting
+                    energyData.setEnergy(currentEnergy - SPRINT_ENERGY_COST);
+                    energyData.setLastActionTime(currentTime);
+                    playerSprintingMap.put(playerUUID, true);
+                    
+                    // Double-check if this tick's consumption depleted energy
+                    if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD) {
+                        player.setSprinting(false);
+                        player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 
+                                                              SLOWDOWN_DURATION, 
+                                                              SLOWDOWN_AMPLIFIER, 
+                                                              false, true, true));
+                        playerSprintingMap.put(playerUUID, false);
+                        // Set cooldown equal to regeneration delay
+                        sprintCooldownMap.put(playerUUID, currentTime + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
+                    }
                 }
-                wasSprintingLastTick = true;
             } else {
-                if (wasSprintingLastTick && energyData.getEnergy() < SPRINT_ENERGY_COST) {
-                    player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, SLOWDOWN_DURATION, 1, false, false));
+                // Not sprinting, but check if player just stopped sprinting
+                UUID playerUUID = player.getUUID();
+                boolean wasSprinting = playerSprintingMap.getOrDefault(playerUUID, false);
+                
+                if (wasSprinting && currentEnergy < SPRINT_ENERGY_THRESHOLD) {
+                    // Reapply slowness to ensure effect persists
+                    player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 
+                                                          SLOWDOWN_DURATION, 
+                                                          SLOWDOWN_AMPLIFIER, 
+                                                          false, true, true));
                 }
-                wasSprintingLastTick = false;
+                playerSprintingMap.put(playerUUID, false);
             }
 
+            // Energy regeneration
             if (canRegenerate(currentTime, energyData)) {
                 if (currentTime - energyData.getLastRegenTime() >= 120) {
                     float regenMultiplier = calculateRegenMultiplier(currentTime, energyData);
                     float regenAmount = BASE_ENERGY_REGEN_RATE +
                             (MAX_ENERGY_REGEN_RATE - BASE_ENERGY_REGEN_RATE) * regenMultiplier;
 
-                    regenerateEnergy(serverPlayer, regenAmount);
+                    float newEnergy = Math.min(energyData.getEnergy() + regenAmount, energyData.getMaxEnergy());
+                    energyData.setEnergy(newEnergy);
                     energyData.setLastRegenTime(currentTime);
                 }
+            }
+
+            // LAST RESORT - Force stop sprint if energy is too low or player is on cooldown
+            UUID playerUUID = player.getUUID();
+            long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
+            
+            if (player.isSprinting() && (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD || currentTime < sprintCooldownEnd)) {
+                player.setSprinting(false);
+                
+                // Apply slowness and also mining fatigue to indicate sprint is on cooldown
+                if (currentTime < sprintCooldownEnd) {
+                    // Calculate remaining cooldown time
+                    int remainingCooldown = (int)(sprintCooldownEnd - currentTime) / 50; // Convert to ticks
+                    
+                    // Apply a mining fatigue effect as a visual indicator of sprint cooldown
+                    player.addEffect(new MobEffectInstance(
+                        MobEffects.DIG_SLOWDOWN, 
+                        Math.min(remainingCooldown, 100), // Use remaining time but cap at 5 seconds
+                        0, // Level 1 effect
+                        false, true, true
+                    ));
+                }
+                
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 
+                                                     SLOWDOWN_DURATION, 
+                                                     SLOWDOWN_AMPLIFIER, 
+                                                     false, true, true));
             }
 
             syncEnergyToClient(serverPlayer, energyData);
@@ -114,8 +197,43 @@ public class PlayerEnergyManager {
 
     public static void consumeEnergy(ServerPlayer player, float amount) {
         player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
-            if (energyData.getEnergy() >= amount) {
-                energyData.setEnergy(energyData.getEnergy() - amount);
+            float currentEnergy = energyData.getEnergy();
+            if (currentEnergy >= amount) {
+                float newEnergy = currentEnergy - amount;
+                energyData.setEnergy(newEnergy);
+                
+                // CRITICAL PATH: Check if we're depleting a large amount of energy at once
+                // This helps catch cases where a large cost depletes energy from full to zero
+                if (amount > 10.0f || newEnergy < SPRINT_ENERGY_THRESHOLD) {
+                    // If player was sprinting and energy is now depleted, forcibly stop sprint
+                    if (player.isSprinting()) {
+                        player.setSprinting(false);
+                        
+                        // Apply a strong slowness effect with particles
+                        MobEffectInstance slowness = new MobEffectInstance(
+                            MobEffects.MOVEMENT_SLOWDOWN, 
+                            SLOWDOWN_DURATION, 
+                            SLOWDOWN_AMPLIFIER, 
+                            false,  // ambient 
+                            true,   // visible
+                            true    // show icon
+                        );
+                        
+                        // First remove any existing effect then add new one
+                        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                        player.addEffect(slowness);
+                        
+                        // Update player state tracking and set sprint cooldown
+                        UUID playerUUID = player.getUUID();
+                        playerSprintingMap.put(playerUUID, false);
+                        
+                        if (newEnergy < SPRINT_ENERGY_THRESHOLD) {
+                            // Set sprint cooldown equal to regeneration delay
+                            sprintCooldownMap.put(playerUUID, System.currentTimeMillis() + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
+                        }
+                    }
+                }
+                
                 syncEnergyToClient(player, energyData);
             }
         });
@@ -183,7 +301,22 @@ public class PlayerEnergyManager {
         if (player instanceof ServerPlayer serverPlayer) {
             PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
             if (energyData != null) {
-                if (energyData.getEnergy() >= BLOCK_BREAK_ENERGY_COST) {
+                float currentEnergy = energyData.getEnergy();
+                
+                // First check if we have enough energy
+                if (currentEnergy >= BLOCK_BREAK_ENERGY_COST) {
+                    // CRITICAL CHECK: Would this deplete energy to zero?
+                    if (currentEnergy - BLOCK_BREAK_ENERGY_COST < SPRINT_ENERGY_THRESHOLD && player.isSprinting()) {
+                        // Preemptively stop sprinting before consuming energy
+                        player.setSprinting(false);
+                        player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 
+                                                             SLOWDOWN_DURATION, 
+                                                             SLOWDOWN_AMPLIFIER, 
+                                                             false, true, true));
+                        playerSprintingMap.put(player.getUUID(), false);
+                    }
+                    
+                    // Now consume energy normally
                     consumeEnergy(serverPlayer, BLOCK_BREAK_ENERGY_COST);
                     energyData.setLastActionTime(System.currentTimeMillis());
                 } else {
@@ -378,6 +511,65 @@ public class PlayerEnergyManager {
         }
     }
 
+    @SubscribeEvent
+    public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        Player player = event.getEntity();
+        if (player != null) {
+            UUID playerUUID = player.getUUID();
+            playerSprintingMap.remove(playerUUID);
+            sprintCooldownMap.remove(playerUUID); // Clean up sprint cooldown map
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerJump(net.minecraftforge.event.entity.living.LivingEvent.LivingJumpEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            if (!isValidGameMode(player)) return;
+            
+            player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                long currentTime = System.currentTimeMillis();
+                UUID playerUUID = player.getUUID();
+                long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
+                
+                // Check if the player is sprinting and record the action
+                if (player.isSprinting()) {
+                    energyData.setLastActionTime(currentTime);
+                    
+                    // If energy is below threshold or player is on cooldown, force stop sprint
+                    if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD || currentTime < sprintCooldownEnd) {
+                        player.setSprinting(false);
+                        
+                        // Apply a strong slowness effect
+                        MobEffectInstance slowness = new MobEffectInstance(
+                            MobEffects.MOVEMENT_SLOWDOWN, 
+                            SLOWDOWN_DURATION, 
+                            SLOWDOWN_AMPLIFIER, 
+                            false, true, true
+                        );
+                        
+                        player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                        player.addEffect(slowness);
+                        
+                        // Apply a visual indicator if on cooldown
+                        if (currentTime < sprintCooldownEnd) {
+                            int remainingCooldown = (int)(sprintCooldownEnd - currentTime) / 50; // Convert to ticks
+                            player.addEffect(new MobEffectInstance(
+                                MobEffects.DIG_SLOWDOWN,
+                                Math.min(remainingCooldown, 100), // Cap at 5 seconds
+                                0, false, true, true
+                            ));
+                        }
+                        
+                        playerSprintingMap.put(playerUUID, false);
+                        
+                        // Use network packet to ensure client sees sprint stop
+                        syncEnergyToClient((ServerPlayer)player, energyData);
+                    }
+                }
+            });
+        }
+    }
+
     private static boolean isValidGameMode(Player player) {
         GameType gameMode = player.isCreative() ? GameType.CREATIVE :
                 player.isSpectator() ? GameType.SPECTATOR : GameType.SURVIVAL;
@@ -406,5 +598,10 @@ public class PlayerEnergyManager {
                 syncEnergyToClient(player, data);
             });
         }
+    }
+
+    // Helper method to check if energy is zero or very close to zero
+    private static boolean isEnergyZero(float energy) {
+        return energy < EPSILON;
     }
 }

@@ -266,19 +266,29 @@ public class EnergyOverlayHandler {
 
     private static int calculateYOffset(Player player) {
         int offset = 0;
+        boolean hasLeftSideElements = false;
         
-        // Проверяем наличие брони
+        // Calculate health rows (each row is up to 10 hearts / 20 health points)
+        float healthAndAbsorption = player.getHealth() + player.getAbsorptionAmount();
+        int healthRows = (int) Math.ceil(healthAndAbsorption / 20.0f);
+        
+        // For each extra row beyond the first, add 10px
+        if (healthRows > 1) {
+            offset += (healthRows - 1) * 10;
+            hasLeftSideElements = true;
+        }
+        
+        // Always add offset for armor if present (armor bar is always above health)
         if (player.getArmorValue() > 0) {
             offset += 10;
+            hasLeftSideElements = true;
         }
         
-        if (player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) || player.getAirSupply() < player.getMaxAirSupply()) {
-            offset += 10;
-        }
-
-        if (player.hasEffect(MobEffects.ABSORPTION) || 
-            player.hasEffect(MobEffects.HEALTH_BOOST) || 
-            player.getAbsorptionAmount() > 0) {
+        // Add offset for air bar only if no left side elements are pushing the HUD down
+        // Air bar is on the right side of the screen
+        boolean isUnderwater = player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) || 
+                              player.getAirSupply() < player.getMaxAirSupply();
+        if (isUnderwater && !hasLeftSideElements) {
             offset += 10;
         }
         
