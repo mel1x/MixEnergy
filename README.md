@@ -24,6 +24,19 @@ The **MixEnergy Mod** introduces a unique mechanic to Minecraft: **player energy
 
 - **_In creative mode energy doesn't working_**
 
+## Config
+In the latest versions of the mod, a config has been added that allows you to set the initial energy values, regeneration speed, and, if desired, disable the impact of energy on block breaking or attacking entities.
+
+### Example
+```
+[general]
+  defaultMaxEnergy = 45.0
+  energyCostForBreakingBlocks = true
+  energyCostForAttacks = true
+  energyRegenCooldown = 1500
+```
+
+
 ## Gameplay Impact
 
 This mod challenges players to manage their energy wisely, adding a survival aspect even in non-survival game modes. Whether you're mining deep underground, battling mobs, or building your dream base, energy management becomes crucial to success.
@@ -34,5 +47,3 @@ Enhance your Minecraft experience with **MixEnergy** and test your resourcefulne
 <summary>Tags</summary>
 Stamina, Stamina system, Energy, Player actions, Player stamina, Player energy, Running energy Minecraft, Building energy Minecraft, Attacking energy Minecraft
 </details>
-
-
