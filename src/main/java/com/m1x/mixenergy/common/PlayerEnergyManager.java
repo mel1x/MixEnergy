@@ -19,10 +19,12 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Iterator;
 
 @Mod.EventBusSubscriber(modid = "mixenergy")
 public class PlayerEnergyManager {
@@ -40,6 +42,8 @@ public class PlayerEnergyManager {
     private static final int MAX_REGEN_BOOST_TIME = 3000;
 
     private static final Map<UUID, Float> playerMaxEnergyMap = new HashMap<>();
+    private static final Map<UUID, Integer> pendingDimensionSyncs = new HashMap<>();
+    private static final Map<UUID, CompoundTag> playerEnergyDataMap = new HashMap<>();
 
     @SubscribeEvent
     public static void onPlayerTick(PlayerTickEvent event) {
@@ -56,7 +60,16 @@ public class PlayerEnergyManager {
             }
 
             PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
-            if (energyData == null) return;
+            
+            if (energyData == null) {
+                if (!player.level().isClientSide()) {
+                    ensureCapabilityIntegrity(serverPlayer);
+                    energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
+                    if (energyData == null) return;
+                } else {
+                    return;
+                }
+            }
 
             long currentTime = System.currentTimeMillis();
 
@@ -242,6 +255,129 @@ public class PlayerEnergyManager {
         }
     }
 
+    @SubscribeEvent
+    public static void onPlayerClone(PlayerEvent.Clone event) {
+        try {
+            Player originalPlayer = event.getOriginal();
+            Player newPlayer = event.getEntity();
+            UUID playerUUID = newPlayer.getUUID();
+            
+            CompoundTag energyData = new CompoundTag();
+            
+            originalPlayer.reviveCaps();
+
+            originalPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(oldData -> {
+                energyData.putFloat("energy", oldData.getEnergy());
+                energyData.putFloat("maxEnergy", oldData.getMaxEnergy());
+                energyData.putLong("lastActionTime", oldData.getLastActionTime());
+                energyData.putLong("lastRegenTime", oldData.getLastRegenTime());
+
+                playerEnergyDataMap.put(playerUUID, energyData.copy());
+                
+                System.out.println("[MixEnergy] Stored energy data for " + playerUUID + ": energy=" + 
+                    oldData.getEnergy() + ", maxEnergy=" + oldData.getMaxEnergy());
+            });
+
+            originalPlayer.invalidateCaps();
+
+            if (!energyData.isEmpty()) {
+                newPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(newData -> {
+                    newData.setEnergy(energyData.getFloat("energy"));
+                    newData.setMaxEnergy(energyData.getFloat("maxEnergy"));
+                    newData.setLastActionTime(energyData.getLong("lastActionTime"));
+                    newData.setLastRegenTime(energyData.getLong("lastRegenTime"));
+                    
+                    System.out.println("[MixEnergy] Applied energy data for " + playerUUID + ": energy=" + 
+                        newData.getEnergy() + ", maxEnergy=" + newData.getMaxEnergy());
+
+                    if (!event.isWasDeath() && newPlayer instanceof ServerPlayer serverPlayer) {
+                        pendingDimensionSyncs.put(serverPlayer.getUUID(), 2);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            System.err.println("[MixEnergy] Error in player clone handling: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
+        try {
+            Player player = event.getEntity();
+            UUID playerUUID = player.getUUID();
+            
+            if (player instanceof ServerPlayer serverPlayer) {
+                if (playerEnergyDataMap.containsKey(playerUUID)) {
+                    CompoundTag storedData = playerEnergyDataMap.get(playerUUID);
+                    
+                    player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                        energyData.setEnergy(storedData.getFloat("energy"));
+                        energyData.setMaxEnergy(storedData.getFloat("maxEnergy"));
+                        energyData.setLastActionTime(storedData.getLong("lastActionTime"));
+                        energyData.setLastRegenTime(storedData.getLong("lastRegenTime"));
+                        
+                        System.out.println("[MixEnergy] Restored energy data on dimension change for " + 
+                            playerUUID + ": energy=" + energyData.getEnergy() + 
+                            ", maxEnergy=" + energyData.getMaxEnergy());
+                    });
+                }
+                
+                pendingDimensionSyncs.put(playerUUID, 10);
+            }
+        } catch (Exception e) {
+            System.err.println("[MixEnergy] Error in dimension change handling: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerTick(net.minecraftforge.event.TickEvent.ServerTickEvent event) {
+        if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
+            Iterator<Map.Entry<UUID, Integer>> iterator = pendingDimensionSyncs.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<UUID, Integer> entry = iterator.next();
+                UUID playerUUID = entry.getKey();
+                int ticksLeft = entry.getValue() - 1;
+                
+                if (ticksLeft <= 0) {
+                    iterator.remove();
+
+                    for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
+                        if (player.getUUID().equals(playerUUID)) {
+                            if (playerEnergyDataMap.containsKey(playerUUID)) {
+                                CompoundTag storedData = playerEnergyDataMap.get(playerUUID);
+
+                                player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                                    if (energyData.getEnergy() != storedData.getFloat("energy") ||
+                                        energyData.getMaxEnergy() != storedData.getFloat("maxEnergy")) {
+                                        
+                                        energyData.setEnergy(storedData.getFloat("energy"));
+                                        energyData.setMaxEnergy(storedData.getFloat("maxEnergy"));
+                                        
+                                        System.out.println("[MixEnergy] Fixed reset values during tick sync for " + 
+                                            playerUUID + ": energy=" + energyData.getEnergy() + 
+                                            ", maxEnergy=" + energyData.getMaxEnergy());
+                                    }
+                                });
+                            }
+                            
+                            player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                                syncEnergyToClient(player, energyData);
+                                System.out.println("[MixEnergy] Synced energy to client for " + playerUUID + 
+                                    ": energy=" + energyData.getEnergy() + 
+                                    ", maxEnergy=" + energyData.getMaxEnergy());
+                            });
+                            break;
+                        }
+                    }
+                } else {
+                    entry.setValue(ticksLeft);
+                }
+            }
+        }
+    }
+
     private static boolean isValidGameMode(Player player) {
         GameType gameMode = player.isCreative() ? GameType.CREATIVE :
                 player.isSpectator() ? GameType.SPECTATOR : GameType.SURVIVAL;
@@ -256,5 +392,19 @@ public class PlayerEnergyManager {
         long idleTime = currentTime - energyData.getLastActionTime() - MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get();
         if (idleTime <= 0) return 0;
         return Math.min((float) idleTime / MAX_REGEN_BOOST_TIME, 1.0f);
+    }
+
+    private static void ensureCapabilityIntegrity(ServerPlayer player) {
+        PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
+        if (energyData == null) {
+            PlayerEnergyProvider provider = new PlayerEnergyProvider();
+            player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(data -> {
+                data.setEnergy(MixEnergyConfig.DEFAULT_MAX_ENERGY.get().floatValue());
+                data.setMaxEnergy(MixEnergyConfig.DEFAULT_MAX_ENERGY.get().floatValue());
+                data.setLastActionTime(System.currentTimeMillis());
+                data.setLastRegenTime(System.currentTimeMillis());
+                syncEnergyToClient(player, data);
+            });
+        }
     }
 }
