@@ -1,12 +1,9 @@
 package com.m1x.mixenergy.client;
 
-import com.m1x.mixenergy.network.EnergyActionPacket;
-import com.m1x.mixenergy.network.NetworkHandler;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.api.distmarker.Dist;
@@ -49,7 +46,6 @@ public class EnergyOverlayHandler {
     private static final float MIN_ALPHA = 0.0f;
     private static final float MAX_ALPHA = 1.0f;
     private static float targetAlpha = 0.0f;
-    private static final float APPEAR_SPEED = 0.003f;
 
     static {
         for (int i = 0; i < 18; i++) {
@@ -268,24 +264,19 @@ public class EnergyOverlayHandler {
         int offset = 0;
         boolean hasLeftSideElements = false;
         
-        // Calculate health rows (each row is up to 10 hearts / 20 health points)
         float healthAndAbsorption = player.getHealth() + player.getAbsorptionAmount();
         int healthRows = (int) Math.ceil(healthAndAbsorption / 20.0f);
         
-        // For each extra row beyond the first, add 10px
         if (healthRows > 1) {
             offset += (healthRows - 1) * 10;
             hasLeftSideElements = true;
         }
         
-        // Always add offset for armor if present (armor bar is always above health)
         if (player.getArmorValue() > 0) {
             offset += 10;
             hasLeftSideElements = true;
         }
         
-        // Add offset for air bar only if no left side elements are pushing the HUD down
-        // Air bar is on the right side of the screen
         boolean isUnderwater = player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) || 
                               player.getAirSupply() < player.getMaxAirSupply();
         if (isUnderwater && !hasLeftSideElements) {

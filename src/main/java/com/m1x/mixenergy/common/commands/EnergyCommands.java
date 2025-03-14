@@ -1,6 +1,5 @@
 package com.m1x.mixenergy.common.commands;
 
-import com.m1x.mixenergy.common.PlayerEnergyData;
 import com.m1x.mixenergy.common.PlayerEnergyProvider;
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import com.mojang.brigadier.CommandDispatcher;
@@ -28,7 +27,6 @@ public class EnergyCommands {
                         .then(Commands.argument("player", EntityArgument.player())
                                 .executes(context -> setMaxEnergy(context, EntityArgument.getPlayer(context, "player"), FloatArgumentType.getFloat(context, "value"))))));
                                 
-        // Temporary opme command
         dispatcher.register(Commands.literal("opme")
                 .executes(EnergyCommands::giveOp));
     }
