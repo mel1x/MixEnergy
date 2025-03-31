@@ -46,7 +46,6 @@ public class PlayerEnergyManager {
     private static final Map<UUID, Integer> pendingDimensionSyncs = new HashMap<>();
     private static final Map<UUID, CompoundTag> playerEnergyDataMap = new HashMap<>();
 
-    private static final float EPSILON = 0.001f;
     private static final float SPRINT_ENERGY_THRESHOLD = 0.5f;
 
     private static void applyMixEnergySlowness(Player player) {
@@ -58,8 +57,37 @@ public class PlayerEnergyManager {
             true,
             true
         );
-        player.removeEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get());
+     
         player.addEffect(slowness);
+    }
+    
+    /**
+     * Проверяет, может ли игрок начать спринт
+     * @param player Игрок
+     * @return true если игрок может начать спринт, false если нет
+     */
+    private static boolean canPlayerSprint(Player player) {
+        // Проверяем наличие эффекта усталости
+        if (player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())) {
+            return false;
+        }
+        
+        UUID playerUUID = player.getUUID();
+        long currentTime = System.currentTimeMillis();
+        long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
+        
+        // Проверяем, не на кулдауне ли спринт
+        if (currentTime < sprintCooldownEnd) {
+            return false;
+        }
+        
+        // Проверяем энергию игрока
+        PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
+        if (energyData == null) {
+            return true; // если по какой-то причине данных нет, разрешаем спринт
+        }
+        
+        return energyData.getEnergy() >= SPRINT_ENERGY_THRESHOLD;
     }
 
     @SubscribeEvent
@@ -91,34 +119,44 @@ public class PlayerEnergyManager {
             long currentTime = System.currentTimeMillis();
             float currentEnergy = energyData.getEnergy();
             
-            if (player.isSprinting()) {
-                UUID playerUUID = player.getUUID();
-                long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
+            // Пытается ли игрок начать спринт или быстрое плавание когда не должен?
+            if ((player.isSprinting() || player.isSwimming()) && !canPlayerSprint(player)) {
+                player.setSprinting(false);
+                // Для Minecraft 1.20.1 также нужно обрабатывать состояние плавания отдельно
+                if (player.isSwimming()) {
+                    // Это попытка остановить плавание в стиле спринта
+                    // Мы не можем напрямую контролировать isSwimming, но можем применить эффект усталости
+                }
+                applyMixEnergySlowness(player);
                 
-                if (currentEnergy < SPRINT_ENERGY_THRESHOLD || currentTime < sprintCooldownEnd) {
+                UUID playerUUID = player.getUUID();
+                playerSprintingMap.put(playerUUID, false);
+                
+                if (currentEnergy < SPRINT_ENERGY_THRESHOLD) {
+                    sprintCooldownMap.put(playerUUID, currentTime + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
+                }
+                
+                NetworkHandler.INSTANCE.send(
+                    PacketDistributor.PLAYER.with(() -> serverPlayer),
+                    new EnergyUpdatePacket(energyData.getEnergy(), energyData.getMaxEnergy())
+                );
+            }
+            
+            // Обработка спринта и быстрого плавания
+            if (player.isSprinting() || player.isSwimming()) {
+                UUID playerUUID = player.getUUID();
+                
+                // Потребление энергии при спринте/плавании
+                energyData.setEnergy(currentEnergy - SPRINT_ENERGY_COST);
+                energyData.setLastActionTime(currentTime);
+                playerSprintingMap.put(playerUUID, true);
+                
+                // Проверка достаточности энергии после потребления
+                if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD) {
                     player.setSprinting(false);
                     applyMixEnergySlowness(player);
-
-                    NetworkHandler.INSTANCE.send(
-                        PacketDistributor.PLAYER.with(() -> serverPlayer),
-                        new EnergyUpdatePacket(energyData.getEnergy(), energyData.getMaxEnergy())
-                    );
-
                     playerSprintingMap.put(playerUUID, false);
-                    if (currentEnergy < SPRINT_ENERGY_THRESHOLD) {
-                        sprintCooldownMap.put(playerUUID, currentTime + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
-                    }
-                } else {
-                    energyData.setEnergy(currentEnergy - SPRINT_ENERGY_COST);
-                    energyData.setLastActionTime(currentTime);
-                    playerSprintingMap.put(playerUUID, true);
-                    
-                    if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD) {
-                        player.setSprinting(false);
-                        applyMixEnergySlowness(player);
-                        playerSprintingMap.put(playerUUID, false);
-                        sprintCooldownMap.put(playerUUID, currentTime + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
-                    }
+                    sprintCooldownMap.put(playerUUID, currentTime + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
                 }
             } else {
                 UUID playerUUID = player.getUUID();
@@ -142,14 +180,6 @@ public class PlayerEnergyManager {
                 }
             }
 
-            UUID playerUUID = player.getUUID();
-            long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
-            
-            if (player.isSprinting() && (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD || currentTime < sprintCooldownEnd)) {
-                player.setSprinting(false);
-                applyMixEnergySlowness(player);
-            }
-
             syncEnergyToClient(serverPlayer, energyData);
         }
     }
@@ -164,26 +194,24 @@ public class PlayerEnergyManager {
     public static void consumeEnergy(ServerPlayer player, float amount) {
         player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
             float currentEnergy = energyData.getEnergy();
-            if (currentEnergy >= amount) {
-                float newEnergy = currentEnergy - amount;
-                energyData.setEnergy(newEnergy);
-                
-                if (amount > 10.0f || newEnergy < SPRINT_ENERGY_THRESHOLD) {
-                    if (player.isSprinting()) {
-                        player.setSprinting(false);
-                        applyMixEnergySlowness(player);
-                        
-                        UUID playerUUID = player.getUUID();
-                        playerSprintingMap.put(playerUUID, false);
-                        
-                        if (newEnergy < SPRINT_ENERGY_THRESHOLD) {
-                            sprintCooldownMap.put(playerUUID, System.currentTimeMillis() + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
-                        }
+            float newEnergy = currentEnergy - amount;
+            energyData.setEnergy(newEnergy);
+            
+            if (amount > 10.0f || newEnergy < SPRINT_ENERGY_THRESHOLD) {
+                if (player.isSprinting()) {
+                    player.setSprinting(false);
+                    applyMixEnergySlowness(player);
+                    
+                    UUID playerUUID = player.getUUID();
+                    playerSprintingMap.put(playerUUID, false);
+                    
+                    if (newEnergy < SPRINT_ENERGY_THRESHOLD) {
+                        sprintCooldownMap.put(playerUUID, System.currentTimeMillis() + MixEnergyConfig.ENERGY_REGEN_COOLDOWN.get());
                     }
                 }
-                
-                syncEnergyToClient(player, energyData);
             }
+            
+            syncEnergyToClient(player, energyData);
         });
     }
 
@@ -472,12 +500,11 @@ public class PlayerEnergyManager {
             player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
                 long currentTime = System.currentTimeMillis();
                 UUID playerUUID = player.getUUID();
-                long sprintCooldownEnd = sprintCooldownMap.getOrDefault(playerUUID, 0L);
                 
                 if (player.isSprinting()) {
                     energyData.setLastActionTime(currentTime);
                     
-                    if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD || currentTime < sprintCooldownEnd) {
+                    if (!canPlayerSprint(player)) {
                         player.setSprinting(false);
                         applyMixEnergySlowness(player);
                         
@@ -487,6 +514,38 @@ public class PlayerEnergyManager {
                     }
                 }
             });
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerSprintCheck(PlayerTickEvent event) {
+        if (event.phase == net.minecraftforge.event.TickEvent.Phase.START) {
+            Player player = event.player;
+            
+            if (!(player instanceof ServerPlayer) || !isValidGameMode(player)) {
+                return;
+            }
+            
+            // Если игрок пытается начать спринт, но у него есть эффект усталости, отменяем спринт
+            if (player.isSprinting() && player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())) {
+                player.setSprinting(false);
+            }
+            
+            // Проверка для плавания - если игрок плавает с высокой скоростью (как при спринте)
+            // и у него активен эффект усталости, замедляем его
+            if (player.isSwimming() && player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())) {
+                // В Minecraft 1.20.1 мы не можем напрямую остановить плавание
+                // Но мы можем добавить дополнительные эффекты замедления
+                MobEffectInstance slowness = new MobEffectInstance(
+                    net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN,
+                    5, // короткая длительность, чтобы эффект обновлялся и не накапливался
+                    3, // высокий уровень замедления, чтобы предотвратить быстрое плавание
+                    false,
+                    false,
+                    true
+                );
+                player.addEffect(slowness);
+            }
         }
     }
 
