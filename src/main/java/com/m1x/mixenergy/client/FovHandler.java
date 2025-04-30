@@ -11,7 +11,7 @@ import com.m1x.mixenergy.registry.MixEnergyEffects;
 
 @Mod.EventBusSubscriber(modid = "mixenergy", value = Dist.CLIENT)
 public class FovHandler {
-    private static final float FOV_MODIFIER = 0.94f;
+    private static final float FOV_MODIFIER = 0.96f;
 
     @SubscribeEvent
     @OnlyIn(Dist.CLIENT)
