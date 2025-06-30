@@ -1,6 +1,7 @@
 package com.m1x.mixenergy.common;
 
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
+import com.m1x.mixenergy.common.entity.EnergyOrbEntity;
 import com.m1x.mixenergy.network.EnergyActionPacket;
 import com.m1x.mixenergy.registry.MixEnergyEffects;
 import net.minecraft.server.level.ServerPlayer;
@@ -419,7 +420,17 @@ public class PlayerEnergyManager {
 
     @SubscribeEvent
     public static void onLivingAttack(LivingAttackEvent event) {
+        // Если игрок получил урон
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
+            if (!isValidGameMode(serverPlayer)) return;
+            
+            serverPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
+                energyData.setLastActionTime(System.currentTimeMillis());
+            });
+        }
+        
+        // Если игрок атакует моба
+        if (event.getSource().getEntity() instanceof ServerPlayer serverPlayer) {
             if (!isValidGameMode(serverPlayer)) return;
             
             serverPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
@@ -440,6 +451,51 @@ public class PlayerEnergyManager {
             player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
                 playerMaxEnergyMap.put(player.getUUID(), energyData.getMaxEnergy());
             });
+        }
+    }
+    
+    @SubscribeEvent
+    public static void onMobDeath(LivingDeathEvent event) {
+        // Only process on the server
+        if (event.getEntity().level().isClientSide()) {
+            return;
+        }
+        
+        // Don't spawn energy orbs for players
+        if (event.getEntity() instanceof Player) {
+            return;
+        }
+        
+        // Check if mob was killed by a player
+        if (event.getSource().getEntity() instanceof Player player) {
+            // Get the position of the killed entity
+            double x = event.getEntity().getX();
+            double y = event.getEntity().getY() + 0.5D; // Slightly above the entity
+            double z = event.getEntity().getZ();
+            
+            // Determine number of orbs to spawn (2-5 based on entity size)
+            int orbCount = 2;
+            if (event.getEntity().getBbHeight() > 1.0f || event.getEntity().getBbWidth() > 1.0f) {
+                orbCount = 3;
+            }
+            if (event.getEntity().getBbHeight() > 2.0f || event.getEntity().getBbWidth() > 2.0f) {
+                orbCount = 5;
+            }
+            
+            // Spawn energy orbs
+            for (int i = 0; i < orbCount; i++) {
+                EnergyOrbEntity orb = new EnergyOrbEntity(event.getEntity().level(), x, y, z);
+                
+                // Add some random movement
+                double speedX = event.getEntity().getRandom().nextDouble() * 0.2 - 0.1;
+                double speedY = event.getEntity().getRandom().nextDouble() * 0.2 + 0.2; // Always up
+                double speedZ = event.getEntity().getRandom().nextDouble() * 0.2 - 0.1;
+                
+                orb.setDeltaMovement(speedX, speedY, speedZ);
+                
+                // Add to world
+                event.getEntity().level().addFreshEntity(orb);
+            }
         }
     }
     
