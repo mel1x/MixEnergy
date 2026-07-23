@@ -4,8 +4,19 @@ public final class ClientPacketHandler {
     private ClientPacketHandler() {
     }
 
-    public static void updateEnergy(float energy, float maxEnergy) {
-        EnergyOverlayHandler.setMaxEnergyValue(maxEnergy);
-        EnergyOverlayHandler.setEnergyValue(energy);
+    public static void updateEnergy(
+            float energy,
+            float maxEnergy,
+            float energyTrendPerTick,
+            float sprintCostPerTick,
+            float swimmingCostPerTick
+    ) {
+        EnergyOverlayHandler.applyServerUpdate(
+                energy,
+                maxEnergy,
+                energyTrendPerTick,
+                sprintCostPerTick,
+                swimmingCostPerTick
+        );
     }
 }

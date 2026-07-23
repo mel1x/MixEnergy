@@ -11,19 +11,40 @@ import java.util.function.Supplier;
 public class EnergyUpdatePacket {
     private final float energy;
     private final float maxEnergy;
+    private final float energyTrendPerTick;
+    private final float sprintCostPerTick;
+    private final float swimmingCostPerTick;
 
-    public EnergyUpdatePacket(float energy, float maxEnergy) {
+    public EnergyUpdatePacket(
+            float energy,
+            float maxEnergy,
+            float energyTrendPerTick,
+            float sprintCostPerTick,
+            float swimmingCostPerTick
+    ) {
         this.energy = energy;
         this.maxEnergy = maxEnergy;
+        this.energyTrendPerTick = energyTrendPerTick;
+        this.sprintCostPerTick = sprintCostPerTick;
+        this.swimmingCostPerTick = swimmingCostPerTick;
     }
 
     public static void encode(EnergyUpdatePacket message, FriendlyByteBuf buffer) {
         buffer.writeFloat(message.energy);
         buffer.writeFloat(message.maxEnergy);
+        buffer.writeFloat(message.energyTrendPerTick);
+        buffer.writeFloat(message.sprintCostPerTick);
+        buffer.writeFloat(message.swimmingCostPerTick);
     }
 
     public static EnergyUpdatePacket decode(FriendlyByteBuf buffer) {
-        return new EnergyUpdatePacket(buffer.readFloat(), buffer.readFloat());
+        return new EnergyUpdatePacket(
+                buffer.readFloat(),
+                buffer.readFloat(),
+                buffer.readFloat(),
+                buffer.readFloat(),
+                buffer.readFloat()
+        );
     }
 
     public static void handle(
@@ -37,7 +58,10 @@ public class EnergyUpdatePacket {
                         Dist.CLIENT,
                         () -> () -> ClientPacketHandler.updateEnergy(
                                 message.energy,
-                                message.maxEnergy
+                                message.maxEnergy,
+                                message.energyTrendPerTick,
+                                message.sprintCostPerTick,
+                                message.swimmingCostPerTick
                         )
                 );
             }

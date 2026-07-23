@@ -2,6 +2,7 @@ package com.m1x.mixenergy.client;
 
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import com.m1x.mixenergy.common.PlayerEnergyManager;
+import com.m1x.mixenergy.registry.MixEnergyEffects;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
@@ -35,6 +36,10 @@ public final class EnergyOverlayHandler {
             texture("textures/gui/energy_bar/left_frame.png");
     private static final ResourceLocation RIGHT_FRAME =
             texture("textures/gui/energy_bar/right_frame.png");
+    private static final ResourceLocation LEFT_FRAME_FULL =
+            texture("textures/gui/energy_bar/left_frame_full.png");
+    private static final ResourceLocation RIGHT_FRAME_FULL =
+            texture("textures/gui/energy_bar/right_frame_full.png");
     private static final ResourceLocation[] CENTER_ANIMATION = new ResourceLocation[18];
 
     private static final int CENTER_WIDTH = 11;
@@ -49,13 +54,18 @@ public final class EnergyOverlayHandler {
 
     private static float energyValue = 27.0f;
     private static float displayedEnergyValue = 27.0f;
+    private static float projectedEnergyValue = 27.0f;
     private static float maxEnergyValue = 27.0f;
+    private static float serverEnergyTrendPerTick;
+    private static float sprintCostPerTick = 0.25f;
+    private static float swimmingCostPerTick = 0.25f;
     private static float overlayAlpha;
     private static long lastEnergyChangeTime = Util.getMillis();
     private static long lastAlphaUpdateTime = Util.getMillis();
     private static long animationStartTime;
     private static int visualUpdateTicker;
     private static boolean animating;
+    private static boolean hasServerSnapshot;
 
     static {
         for (int i = 0; i < CENTER_ANIMATION.length; i++) {
@@ -80,9 +90,20 @@ public final class EnergyOverlayHandler {
         return maxEnergyValue;
     }
 
-    public static void setEnergyValue(float value) {
+    public static void applyServerUpdate(
+            float value,
+            float maxValue,
+            float energyTrendPerTick,
+            float serverSprintCostPerTick,
+            float serverSwimmingCostPerTick
+    ) {
+        setMaxEnergyValue(maxValue);
         float previous = energyValue;
         energyValue = Mth.clamp(value, 0.0f, maxEnergyValue);
+        projectedEnergyValue = energyValue;
+        serverEnergyTrendPerTick = energyTrendPerTick;
+        sprintCostPerTick = Math.max(0.0f, serverSprintCostPerTick);
+        swimmingCostPerTick = Math.max(0.0f, serverSwimmingCostPerTick);
 
         if (previous != energyValue) {
             lastEnergyChangeTime = Util.getMillis();
@@ -91,9 +112,11 @@ public final class EnergyOverlayHandler {
             animating = true;
             animationStartTime = Util.getMillis();
         }
-        if (energyValue < PlayerEnergyManager.SPRINT_ENERGY_THRESHOLD) {
+        if (!hasServerSnapshot
+                || energyValue < PlayerEnergyManager.SPRINT_ENERGY_THRESHOLD) {
             displayedEnergyValue = energyValue;
         }
+        hasServerSnapshot = true;
     }
 
     public static void setMaxEnergyValue(float value) {
@@ -104,21 +127,64 @@ public final class EnergyOverlayHandler {
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END
-                || ++visualUpdateTicker < VISUAL_UPDATE_INTERVAL_TICKS) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+
+        float trendPerTick = getClientEnergyTrend();
+        projectedEnergyValue = Mth.clamp(
+                projectedEnergyValue + trendPerTick,
+                0.0f,
+                maxEnergyValue
+        );
+        if (++visualUpdateTicker < VISUAL_UPDATE_INTERVAL_TICKS) {
             return;
         }
         visualUpdateTicker = 0;
 
-        if (Math.abs(energyValue - displayedEnergyValue) < 0.05f) {
-            displayedEnergyValue = energyValue;
-        } else {
-            displayedEnergyValue = Mth.lerp(
-                    0.4f,
-                    displayedEnergyValue,
-                    energyValue
-            );
+        float difference = projectedEnergyValue - displayedEnergyValue;
+        float reconciliationDirection = trendPerTick != 0.0f
+                ? trendPerTick
+                : serverEnergyTrendPerTick;
+        if ((reconciliationDirection < 0.0f && difference > 0.0f)
+                || (reconciliationDirection > 0.0f && difference < 0.0f)) {
+            return;
         }
+        if (Math.abs(difference) < 0.05f) {
+            displayedEnergyValue = projectedEnergyValue;
+            return;
+        }
+
+        float expectedStep = Math.abs(trendPerTick) * VISUAL_UPDATE_INTERVAL_TICKS;
+        float correctionStep = Math.abs(difference) * 0.5f;
+        displayedEnergyValue = Mth.approach(
+                displayedEnergyValue,
+                projectedEnergyValue,
+                Math.max(0.05f, Math.max(expectedStep, correctionStep))
+        );
+    }
+
+    private static float getClientEnergyTrend() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.gameMode == null) {
+            return 0.0f;
+        }
+
+        GameType gameMode = minecraft.gameMode.getPlayerMode();
+        if (gameMode != GameType.SURVIVAL && gameMode != GameType.ADVENTURE) {
+            return 0.0f;
+        }
+        if (player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())) {
+            return Math.max(0.0f, serverEnergyTrendPerTick);
+        }
+        if (player.isInWater() && (player.isSwimming() || player.isSprinting())) {
+            return -swimmingCostPerTick;
+        }
+        if (player.isSprinting()) {
+            return -sprintCostPerTick;
+        }
+        return Math.max(0.0f, serverEnergyTrendPerTick);
     }
 
     @SubscribeEvent
@@ -196,12 +262,15 @@ public final class EnergyOverlayHandler {
         int leftInnerX = startX + FRAME_WIDTH;
         int centerX = leftInnerX + halfWidth;
         int rightInnerX = centerX + CENTER_WIDTH;
+        boolean fullEnergy = energyValue >= maxEnergyValue - 0.001f;
+        ResourceLocation leftFrame = fullEnergy ? LEFT_FRAME_FULL : LEFT_FRAME;
+        ResourceLocation rightFrame = fullEnergy ? RIGHT_FRAME_FULL : RIGHT_FRAME;
 
         RenderSystem.enableBlend();
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
 
         graphics.blit(
-                LEFT_FRAME,
+                leftFrame,
                 startX,
                 y,
                 0,
@@ -217,7 +286,7 @@ public final class EnergyOverlayHandler {
         renderTiled(graphics, ENERGY_BAR_BG_RIGHT, rightInnerX, y, halfWidth);
         renderTiled(graphics, ENERGY_BAR_RIGHT, rightInnerX, y, filledHalfWidth);
         graphics.blit(
-                RIGHT_FRAME,
+                rightFrame,
                 rightInnerX + halfWidth,
                 y,
                 0,

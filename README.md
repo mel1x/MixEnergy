@@ -51,6 +51,7 @@ fastSwimming = true
 breakingBlocks = true
 placingBlocks = true
 attacks = true
+jumping = false
 
 [energy_costs]
 # Movement costs are charged every server tick
@@ -59,11 +60,13 @@ fastSwimmingPerTick = 0.25
 breakingBlock = 2.0
 placingBlock = 1.0
 attack = 3.0
+jump = 1.0
 
 [regeneration]
 # Restored per regeneration pulse; one pulse normally occurs every 3 ticks
 baseRate = 1.0
 maxRate = 1.8
+speedMultiplier = 1.0 # 0 disables passive regeneration
 ```
 
 The HUD position is stored separately:

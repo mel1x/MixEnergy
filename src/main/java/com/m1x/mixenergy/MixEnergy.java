@@ -1,6 +1,7 @@
 package com.m1x.mixenergy;
 
 import com.m1x.mixenergy.common.commands.EnergyCommands;
+import com.m1x.mixenergy.compat.combatroll.CombatRollCompat;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import com.m1x.mixenergy.network.NetworkHandler;
 import com.m1x.mixenergy.registry.MixEnergyEffects;
@@ -9,6 +10,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
@@ -25,6 +27,9 @@ public class MixEnergy {
         NetworkHandler.register();
 
         MinecraftForge.EVENT_BUS.register(this);
+        if (ModList.get().isLoaded(CombatRollCompat.MOD_ID)) {
+            CombatRollCompat.register();
+        }
     }
 
     @SubscribeEvent

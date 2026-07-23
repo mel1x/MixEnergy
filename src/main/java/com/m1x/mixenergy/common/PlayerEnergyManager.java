@@ -9,9 +9,11 @@ import com.m1x.mixenergy.registry.MixEnergyEffects;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
@@ -127,14 +129,27 @@ public final class PlayerEnergyManager {
     }
 
     private static void regenerateEnergyIfReady(long gameTime, PlayerEnergyData energyData) {
-        if (energyData.getEnergy() >= energyData.getMaxEnergy()) {
+        float amount = getRegenerationPulseAmount(gameTime, energyData);
+        if (amount <= 0.0f
+                || gameTime - energyData.getLastRegenTick() < REGEN_INTERVAL_TICKS) {
             return;
         }
 
+        energyData.setEnergy(energyData.getEnergy() + amount);
+        energyData.setLastRegenTick(gameTime);
+    }
+
+    private static float getRegenerationPulseAmount(
+            long gameTime,
+            PlayerEnergyData energyData
+    ) {
+        if (energyData.getEnergy() >= energyData.getMaxEnergy()) {
+            return 0.0f;
+        }
+
         long idleTicks = Math.max(0L, gameTime - energyData.getLastActionTick());
-        if (idleTicks <= MixEnergyConfig.ENERGY_REGEN_COOLDOWN_TICKS.get()
-                || gameTime - energyData.getLastRegenTick() < REGEN_INTERVAL_TICKS) {
-            return;
+        if (idleTicks <= MixEnergyConfig.ENERGY_REGEN_COOLDOWN_TICKS.get()) {
+            return 0.0f;
         }
 
         long boostedIdleTicks = idleTicks - MixEnergyConfig.ENERGY_REGEN_COOLDOWN_TICKS.get();
@@ -147,10 +162,13 @@ public final class PlayerEnergyManager {
                 baseRate,
                 MixEnergyConfig.MAX_ENERGY_REGEN_RATE.get().floatValue()
         );
-        float amount = baseRate + (maxRate - baseRate) * multiplier;
-
-        energyData.setEnergy(energyData.getEnergy() + amount);
-        energyData.setLastRegenTick(gameTime);
+        float speedMultiplier =
+                MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.get().floatValue();
+        if (speedMultiplier <= 0.0f) {
+            return 0.0f;
+        }
+        return (baseRate + (maxRate - baseRate) * multiplier)
+                * speedMultiplier;
     }
 
     private static void applyFatigue(Player player) {
@@ -212,6 +230,16 @@ public final class PlayerEnergyManager {
 
             syncEnergyToClient(player, energyData);
         });
+    }
+
+    public static void consumeCombatRollEnergy(ServerPlayer player) {
+        if (!MixEnergyConfig.ENERGY_COST_FOR_COMBAT_ROLL.get()) {
+            return;
+        }
+
+        float threeSecondsOfSprinting =
+                MixEnergyConfig.SPRINT_ENERGY_COST.get().floatValue() * 60.0f;
+        consumeEnergy(player, threeSecondsOfSprinting);
     }
 
     public static void regenerateEnergy(ServerPlayer player, float amount) {
@@ -295,6 +323,24 @@ public final class PlayerEnergyManager {
                 MixEnergyConfig.ATTACK_ENERGY_COST.get().floatValue()
         )) {
             event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLivingJump(LivingEvent.LivingJumpEvent event) {
+        if (!MixEnergyConfig.ENERGY_COST_FOR_JUMPING.get()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || !usesEnergy(player)) {
+            return;
+        }
+
+        if (!tryConsumeEnergy(
+                player,
+                MixEnergyConfig.JUMP_ENERGY_COST.get().floatValue()
+        )) {
+            Vec3 movement = player.getDeltaMovement();
+            player.setDeltaMovement(movement.x, Math.min(0.0, movement.y), movement.z);
+            player.hurtMarked = true;
         }
     }
 
@@ -420,7 +466,17 @@ public final class PlayerEnergyManager {
 
         NetworkHandler.sendToPlayer(
                 player,
-                new EnergyUpdatePacket(energyData.getEnergy(), energyData.getMaxEnergy())
+                new EnergyUpdatePacket(
+                        energyData.getEnergy(),
+                        energyData.getMaxEnergy(),
+                        getVisualEnergyTrend(player, energyData, gameTime),
+                        MixEnergyConfig.ENERGY_COST_FOR_SPRINTING.get()
+                                ? MixEnergyConfig.SPRINT_ENERGY_COST.get().floatValue()
+                                : 0.0f,
+                        MixEnergyConfig.ENERGY_COST_FOR_SWIMMING.get()
+                                ? MixEnergyConfig.FAST_SWIMMING_ENERGY_COST.get().floatValue()
+                                : 0.0f
+                )
         );
         SYNC_STATES.put(
                 player.getUUID(),
@@ -430,6 +486,23 @@ public final class PlayerEnergyManager {
 
     private static boolean usesEnergy(Player player) {
         return !player.isCreative() && !player.isSpectator();
+    }
+
+    private static float getVisualEnergyTrend(
+            ServerPlayer player,
+            PlayerEnergyData energyData,
+            long gameTime
+    ) {
+        boolean movementBlocked = energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD
+                || player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get());
+        if (!movementBlocked) {
+            float movementCost = getMovementCost(player);
+            if (movementCost > 0.0f) {
+                return -movementCost;
+            }
+        }
+        return getRegenerationPulseAmount(gameTime, energyData)
+                / REGEN_INTERVAL_TICKS;
     }
 
     private record SyncState(long gameTime, float energy, float maxEnergy) {

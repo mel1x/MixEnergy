@@ -19,14 +19,18 @@ public final class MixEnergyConfig {
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_BREAKING_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_PLACING_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_ATTACKS;
+    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_JUMPING;
+    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_COMBAT_ROLL;
 
     public static final ForgeConfigSpec.DoubleValue SPRINT_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue FAST_SWIMMING_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue BLOCK_BREAK_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue BLOCK_PLACE_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue ATTACK_ENERGY_COST;
+    public static final ForgeConfigSpec.DoubleValue JUMP_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue BASE_ENERGY_REGEN_RATE;
     public static final ForgeConfigSpec.DoubleValue MAX_ENERGY_REGEN_RATE;
+    public static final ForgeConfigSpec.DoubleValue ENERGY_REGEN_SPEED_MULTIPLIER;
 
     public static final ForgeConfigSpec.EnumValue<EnergyBarPosition> ENERGY_BAR_POSITION;
 
@@ -70,6 +74,15 @@ public final class MixEnergyConfig {
                 .comment("Spend energy when attacking entities.")
                 .define("attacks", true);
 
+        ENERGY_COST_FOR_JUMPING = commonBuilder
+                .comment("Spend energy when jumping.")
+                .define("jumping", false);
+
+        ENERGY_COST_FOR_COMBAT_ROLL = commonBuilder
+                .comment("Spend the configured cost of three seconds of sprinting for each Combat Roll.")
+                .comment("This setting is used only when the Combat Roll mod is installed.")
+                .define("combatRoll", true);
+
         commonBuilder.pop();
         commonBuilder
                 .comment("Energy spent by each enabled action.")
@@ -95,6 +108,10 @@ public final class MixEnergyConfig {
                 .comment("Energy spent for an attack.")
                 .defineInRange("attack", 3.0, 0.0, 1000.0);
 
+        JUMP_ENERGY_COST = commonBuilder
+                .comment("Energy spent for a jump when the jumping source is enabled.")
+                .defineInRange("jump", 1.0, 0.0, 1000.0);
+
         commonBuilder.pop();
         commonBuilder
                 .comment("Energy regeneration balance.")
@@ -109,6 +126,11 @@ public final class MixEnergyConfig {
                 .comment("Maximum energy restored per pulse after the idle-time boost.")
                 .comment("Values below baseRate are treated as equal to baseRate.")
                 .defineInRange("maxRate", 1.8, 0.0, 1000.0);
+
+        ENERGY_REGEN_SPEED_MULTIPLIER = commonBuilder
+                .comment("Multiplier applied to passive energy regeneration.")
+                .comment("Set to 0 to disable passive regeneration.")
+                .defineInRange("speedMultiplier", 1.0, 0.0, 5.0);
 
         commonBuilder.pop();
         COMMON_SPEC = commonBuilder.build();

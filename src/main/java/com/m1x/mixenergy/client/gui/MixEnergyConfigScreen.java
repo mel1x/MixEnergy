@@ -4,22 +4,27 @@ import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraftforge.client.ConfigScreenHandler;
 import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.ModLoadingContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class MixEnergyConfigScreen extends Screen {
     private static final int PANEL_MAX_WIDTH = 440;
-    private static final int ROW_HEIGHT = 23;
+    private static final int ROW_HEIGHT = 16;
+    private static final double MAX_REGEN_SPEED_MULTIPLIER = 5.0;
     private static final int COLOR_PANEL = 0xD914181E;
     private static final int COLOR_ROW = 0xA6222830;
     private static final int COLOR_ROW_ALT = 0xA61D232A;
@@ -27,35 +32,24 @@ public class MixEnergyConfigScreen extends Screen {
     private static final int COLOR_ACCENT = 0xFF78AAA6;
     private static final int COLOR_PRIMARY_TEXT = 0xFFE8EEF0;
     private static final int COLOR_SECONDARY_TEXT = 0xFFA9B5B9;
-    private static final String[] SOURCE_LABEL_KEYS = {
-            "mixenergy.config.source.sprinting",
-            "mixenergy.config.source.swimming",
-            "mixenergy.config.source.breaking",
-            "mixenergy.config.source.placing",
-            "mixenergy.config.source.attacks"
-    };
-    private static final String[] SOURCE_DESCRIPTION_KEYS = {
-            "mixenergy.config.source.sprinting.description",
-            "mixenergy.config.source.swimming.description",
-            "mixenergy.config.source.breaking.description",
-            "mixenergy.config.source.placing.description",
-            "mixenergy.config.source.attacks.description"
-    };
-
     private final Screen parentScreen;
     private final List<AbstractWidget> interfaceWidgets = new ArrayList<>();
     private final List<AbstractWidget> gameplayWidgets = new ArrayList<>();
+    private final List<String> gameplayLabelKeys = new ArrayList<>();
+    private final List<String> gameplayDescriptionKeys = new ArrayList<>();
     private final Map<Button, ForgeConfigSpec.BooleanValue> sourceButtons = new LinkedHashMap<>();
     private final Map<Button, PositionChoice> positionButtons = new LinkedHashMap<>();
 
     private Tab activeTab = Tab.INTERFACE;
     private boolean remoteServer;
+    private boolean combatRollLoaded;
     private int panelX;
     private int panelWidth;
     private int contentTop;
     private Button interfaceTabButton;
     private Button gameplayTabButton;
     private Button resetButton;
+    private RegenSpeedSlider regenSpeedSlider;
 
     public MixEnergyConfigScreen(Screen parentScreen) {
         super(Component.translatable("mixenergy.config.title"));
@@ -64,10 +58,18 @@ public class MixEnergyConfigScreen extends Screen {
 
     @Override
     protected void init() {
+        interfaceWidgets.clear();
+        gameplayWidgets.clear();
+        gameplayLabelKeys.clear();
+        gameplayDescriptionKeys.clear();
+        sourceButtons.clear();
+        positionButtons.clear();
+
         remoteServer = minecraft.getConnection() != null && !minecraft.hasSingleplayerServer();
+        combatRollLoaded = ModList.get().isLoaded("combatroll");
         panelWidth = Math.min(PANEL_MAX_WIDTH, width - 24);
         panelX = (width - panelWidth) / 2;
-        contentTop = 80;
+        contentTop = 66;
 
         int tabGap = 4;
         int tabWidth = (panelWidth - tabGap) / 2;
@@ -149,36 +151,67 @@ public class MixEnergyConfigScreen extends Screen {
     }
 
     private void createGameplayWidgets() {
+        int row = 0;
         addSourceToggle(
-                0,
+                row++,
                 "mixenergy.config.source.sprinting",
                 "mixenergy.config.source.sprinting.description",
                 MixEnergyConfig.ENERGY_COST_FOR_SPRINTING
         );
         addSourceToggle(
-                1,
+                row++,
                 "mixenergy.config.source.swimming",
                 "mixenergy.config.source.swimming.description",
                 MixEnergyConfig.ENERGY_COST_FOR_SWIMMING
         );
         addSourceToggle(
-                2,
+                row++,
                 "mixenergy.config.source.breaking",
                 "mixenergy.config.source.breaking.description",
                 MixEnergyConfig.ENERGY_COST_FOR_BREAKING_BLOCKS
         );
         addSourceToggle(
-                3,
+                row++,
                 "mixenergy.config.source.placing",
                 "mixenergy.config.source.placing.description",
                 MixEnergyConfig.ENERGY_COST_FOR_PLACING_BLOCKS
         );
         addSourceToggle(
-                4,
+                row++,
                 "mixenergy.config.source.attacks",
                 "mixenergy.config.source.attacks.description",
                 MixEnergyConfig.ENERGY_COST_FOR_ATTACKS
         );
+        addSourceToggle(
+                row++,
+                "mixenergy.config.source.jumping",
+                "mixenergy.config.source.jumping.description",
+                MixEnergyConfig.ENERGY_COST_FOR_JUMPING
+        );
+        if (combatRollLoaded) {
+            addSourceToggle(
+                    row++,
+                    "mixenergy.config.source.combat_roll",
+                    "mixenergy.config.source.combat_roll.description",
+                    MixEnergyConfig.ENERGY_COST_FOR_COMBAT_ROLL
+            );
+        }
+
+        gameplayLabelKeys.add("mixenergy.config.regeneration_speed");
+        gameplayDescriptionKeys.add("mixenergy.config.regeneration_speed.description");
+        int sliderWidth = 104;
+        int sliderY = gameplayRowY(row);
+        regenSpeedSlider = new RegenSpeedSlider(
+                panelX + panelWidth - sliderWidth - 8,
+                sliderY,
+                sliderWidth,
+                20
+        );
+        regenSpeedSlider.active = !remoteServer;
+        regenSpeedSlider.setTooltip(Tooltip.create(Component.translatable(
+                "mixenergy.config.regeneration_speed.description"
+        )));
+        gameplayWidgets.add(addRenderableWidget(regenSpeedSlider));
     }
 
     private void addSourceToggle(
@@ -187,8 +220,10 @@ public class MixEnergyConfigScreen extends Screen {
             String descriptionKey,
             ForgeConfigSpec.BooleanValue value
     ) {
+        gameplayLabelKeys.add(labelKey);
+        gameplayDescriptionKeys.add(descriptionKey);
         int buttonWidth = 88;
-        int y = contentTop + 15 + row * ROW_HEIGHT;
+        int y = gameplayRowY(row);
         Button toggle = Button.builder(
                 sourceState(value),
                 button -> {
@@ -199,12 +234,16 @@ public class MixEnergyConfigScreen extends Screen {
                     MixEnergyConfig.saveCommon();
                     button.setMessage(sourceState(value));
                 }
-        ).bounds(panelX + panelWidth - buttonWidth - 8, y + 2, buttonWidth, 19).build();
+        ).bounds(panelX + panelWidth - buttonWidth - 8, y, buttonWidth, ROW_HEIGHT).build();
         toggle.setTooltip(Tooltip.create(Component.translatable(descriptionKey)));
         toggle.active = !remoteServer;
 
         gameplayWidgets.add(addRenderableWidget(toggle));
         sourceButtons.put(toggle, value);
+    }
+
+    private int gameplayRowY(int row) {
+        return contentTop + 10 + row * ROW_HEIGHT;
     }
 
     private Component sourceState(ForgeConfigSpec.BooleanValue value) {
@@ -259,9 +298,13 @@ public class MixEnergyConfigScreen extends Screen {
             return;
         }
 
-        sourceButtons.values().forEach(value -> value.set(true));
+        sourceButtons.values().forEach(value ->
+                value.set(value != MixEnergyConfig.ENERGY_COST_FOR_JUMPING)
+        );
+        MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.set(1.0);
         MixEnergyConfig.saveCommon();
         sourceButtons.forEach((button, value) -> button.setMessage(sourceState(value)));
+        regenSpeedSlider.setConfigValue(1.0);
     }
 
     @Override
@@ -318,6 +361,77 @@ public class MixEnergyConfigScreen extends Screen {
                 positionName(MixEnergyConfig.ENERGY_BAR_POSITION.get()),
                 width / 2,
                 contentTop + 91,
+                COLOR_ACCENT
+        );
+        renderPositionPreview(graphics);
+    }
+
+    private void renderPositionPreview(GuiGraphics graphics) {
+        int previewWidth = Math.min(150, panelWidth - 40);
+        int previewHeight = 32;
+        int previewX = width / 2 - previewWidth / 2;
+        int previewY = contentTop + 104;
+        int previewRight = previewX + previewWidth;
+        int previewBottom = previewY + previewHeight;
+
+        graphics.fill(previewX, previewY, previewRight, previewBottom, COLOR_BORDER);
+        graphics.fill(
+                previewX + 1,
+                previewY + 1,
+                previewRight - 1,
+                previewBottom - 1,
+                0xE8101419
+        );
+
+        int hotbarWidth = 44;
+        int hotbarX = width / 2 - hotbarWidth / 2;
+        graphics.fill(
+                hotbarX,
+                previewBottom - 6,
+                hotbarX + hotbarWidth,
+                previewBottom - 3,
+                0xFF39434A
+        );
+
+        int barWidth = 38;
+        int barHeight = 4;
+        int margin = 5;
+        int barX;
+        int barY;
+        switch (MixEnergyConfig.ENERGY_BAR_POSITION.get()) {
+            case TOP_LEFT -> {
+                barX = previewX + margin;
+                barY = previewY + margin;
+            }
+            case TOP_RIGHT -> {
+                barX = previewRight - margin - barWidth;
+                barY = previewY + margin;
+            }
+            case TOP_CENTER -> {
+                barX = width / 2 - barWidth / 2;
+                barY = previewY + margin;
+            }
+            case BOTTOM_LEFT -> {
+                barX = previewX + margin;
+                barY = previewBottom - margin - barHeight;
+            }
+            case BOTTOM_RIGHT -> {
+                barX = previewRight - margin - barWidth;
+                barY = previewBottom - margin - barHeight;
+            }
+            case ABOVE_HOTBAR -> {
+                barX = width / 2 - barWidth / 2;
+                barY = previewBottom - 11;
+            }
+            default -> throw new IllegalStateException("Unknown energy bar position");
+        }
+
+        graphics.fill(barX, barY, barX + barWidth, barY + barHeight, 0xFF253037);
+        graphics.fill(
+                barX + 1,
+                barY + 1,
+                barX + barWidth - 1,
+                barY + barHeight - 1,
                 COLOR_ACCENT
         );
     }
@@ -429,9 +543,9 @@ public class MixEnergyConfigScreen extends Screen {
                 false
         );
 
-        int labelMaxWidth = panelWidth - 116;
-        for (int row = 0; row < SOURCE_LABEL_KEYS.length; row++) {
-            int y = contentTop + 15 + row * ROW_HEIGHT;
+        int labelMaxWidth = panelWidth - 128;
+        for (int row = 0; row < gameplayLabelKeys.size(); row++) {
+            int y = gameplayRowY(row);
             graphics.fill(
                     panelX,
                     y,
@@ -440,13 +554,13 @@ public class MixEnergyConfigScreen extends Screen {
                     row % 2 == 0 ? COLOR_ROW : COLOR_ROW_ALT
             );
 
-            Component label = Component.translatable(SOURCE_LABEL_KEYS[row]);
+            Component label = Component.translatable(gameplayLabelKeys.get(row));
             String clipped = font.plainSubstrByWidth(label.getString(), labelMaxWidth);
             graphics.drawString(
                     font,
                     clipped,
                     panelX + 8,
-                    y + 7,
+                    y + 4,
                     COLOR_PRIMARY_TEXT,
                     false
             );
@@ -459,15 +573,15 @@ public class MixEnergyConfigScreen extends Screen {
             return;
         }
 
-        int firstRowY = contentTop + 15;
+        int firstRowY = gameplayRowY(0);
         int row = (mouseY - firstRowY) / ROW_HEIGHT;
-        if (mouseY < firstRowY || row < 0 || row >= SOURCE_DESCRIPTION_KEYS.length) {
+        if (mouseY < firstRowY || row < 0 || row >= gameplayDescriptionKeys.size()) {
             return;
         }
 
         graphics.renderTooltip(
                 font,
-                Component.translatable(SOURCE_DESCRIPTION_KEYS[row]),
+                Component.translatable(gameplayDescriptionKeys.get(row)),
                 mouseX,
                 mouseY
         );
@@ -490,6 +604,65 @@ public class MixEnergyConfigScreen extends Screen {
     private enum Tab {
         INTERFACE,
         GAMEPLAY
+    }
+
+    private final class RegenSpeedSlider extends AbstractSliderButton {
+        private RegenSpeedSlider(int x, int y, int width, int height) {
+            super(
+                    x,
+                    y,
+                    width,
+                    height,
+                    Component.empty(),
+                    MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.get()
+                            / MAX_REGEN_SPEED_MULTIPLIER
+            );
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            if (remoteServer) {
+                setMessage(Component.translatable("mixenergy.config.server_controlled")
+                        .withStyle(ChatFormatting.GRAY));
+                return;
+            }
+
+            double configuredValue = getConfiguredValue();
+            if (configuredValue <= 0.0) {
+                setMessage(Component.translatable("mixenergy.config.disabled")
+                        .withStyle(ChatFormatting.RED));
+            } else {
+                setMessage(Component.literal(String.format(
+                                Locale.ROOT,
+                                "×%.1f",
+                                configuredValue
+                        ))
+                        .withStyle(ChatFormatting.GREEN));
+            }
+        }
+
+        @Override
+        protected void applyValue() {
+            if (remoteServer) {
+                return;
+            }
+            MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.set(getConfiguredValue());
+            MixEnergyConfig.saveCommon();
+        }
+
+        private double getConfiguredValue() {
+            return Math.round(value * MAX_REGEN_SPEED_MULTIPLIER * 10.0) / 10.0;
+        }
+
+        private void setConfigValue(double configuredValue) {
+            value = Mth.clamp(
+                    configuredValue / MAX_REGEN_SPEED_MULTIPLIER,
+                    0.0,
+                    1.0
+            );
+            updateMessage();
+        }
     }
 
     private record PositionChoice(
