@@ -1,5 +1,7 @@
 package com.m1x.mixenergy;
 
+
+import com.m1x.mixenergy.client.gui.MixEnergyConfigScreen;
 import com.m1x.mixenergy.client.renderer.EnergyOrbRenderer;
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import com.m1x.mixenergy.common.commands.EnergyCommands;
@@ -41,6 +43,7 @@ public class MixEnergy {
     private void clientSetup(final FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
             EntityRenderers.register(MixEnergyEntities.ENERGY_ORB.get(), EnergyOrbRenderer::new);
+            MixEnergyConfigScreen.registerConfigScreen();
         });
     }
 

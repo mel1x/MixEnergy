@@ -15,6 +15,27 @@ public class MixEnergyConfig {
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_ATTACKS;
     
     public static final ForgeConfigSpec.IntValue ENERGY_REGEN_COOLDOWN;
+    
+    public static final ForgeConfigSpec.EnumValue<EnergyBarPosition> ENERGY_BAR_POSITION;
+
+    public enum EnergyBarPosition {
+        ABOVE_HOTBAR("above_hotbar"),
+        TOP_LEFT("top_left"),
+        TOP_RIGHT("top_right"),
+        TOP_CENTER("top_center"),
+        BOTTOM_LEFT("bottom_left"),
+        BOTTOM_RIGHT("bottom_right");
+        
+        private final String name;
+        
+        EnergyBarPosition(String name) {
+            this.name = name;
+        }
+        
+        public String getName() {
+            return name;
+        }
+    }
 
     static {
         BUILDER.comment("MixEnergy Configuration");
@@ -35,6 +56,10 @@ public class MixEnergyConfig {
         ENERGY_REGEN_COOLDOWN = BUILDER
                 .comment("Energy recovery delay time after action (in milliseconds)")
                 .defineInRange("energyRegenCooldown", 1500, 0, 10000);
+                
+        ENERGY_BAR_POSITION = BUILDER
+                .comment("Position of the energy bar on screen")
+                .defineEnum("energyBarPosition", EnergyBarPosition.ABOVE_HOTBAR);
 
         BUILDER.pop();
         SPEC = BUILDER.build();
@@ -43,4 +68,4 @@ public class MixEnergyConfig {
     public static void register() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SPEC);
     }
-} 
+}

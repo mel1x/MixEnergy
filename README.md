@@ -34,7 +34,20 @@ In the latest versions of the mod, a config has been added that allows you to se
   energyCostForBreakingBlocks = true
   energyCostForAttacks = true
   energyRegenCooldown = 1500
+  energyBarPosition = "above_hotbar"
 ```
+
+### Energy Bar Position Options
+You can now customize where the energy bar appears on your screen using the `energyBarPosition` setting:
+
+- `above_hotbar` (default) - Above the hotbar, automatically adjusts for health/armor/air bars
+- `top_left` - Top left corner of the screen
+- `top_right` - Top right corner of the screen  
+- `top_center` - Top center of the screen
+- `bottom_left` - Bottom left corner of the screen
+- `bottom_right` - Bottom right corner of the screen
+
+**Note:** When using positions other than `above_hotbar`, the energy bar will not automatically adjust for other UI elements like health, armor, or air bars.
 
 
 ## Gameplay Impact

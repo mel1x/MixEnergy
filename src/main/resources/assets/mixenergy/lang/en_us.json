@@ -1,3 +1,17 @@
 {
-  "effect.mixenergy.mix_energy_slowness": "Fatigue"
-} 
+  "effect.mixenergy.mix_energy_slowness": "Fatigue",
+  "mixenergy.config.title": "MixEnergy Configuration",
+  "mixenergy.config.position": "Energy Bar Position",
+  "mixenergy.config.position.description": "Choose where the energy bar appears on your screen",
+  "mixenergy.config.position.above_hotbar": "Above Hotbar",
+  "mixenergy.config.position.top_left": "Top Left",
+  "mixenergy.config.position.top_right": "Top Right",
+  "mixenergy.config.position.top_center": "Top Center",
+  "mixenergy.config.position.bottom_left": "Bottom Left",
+  "mixenergy.config.position.bottom_right": "Bottom Right",
+  "mixenergy.config.block_breaking": "Energy Cost for Block Breaking",
+  "mixenergy.config.attacks": "Energy Cost for Attacks",
+  "mixenergy.config.enabled": "Enabled",
+  "mixenergy.config.disabled": "Disabled",
+  "mixenergy.config.server_controlled": "Server Controlled"
+}

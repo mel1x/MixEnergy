@@ -1,6 +1,7 @@
 package com.m1x.mixenergy.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
@@ -170,10 +171,10 @@ public class EnergyOverlayHandler {
             int maxPartialPixels = (int) (MAX_ENERGY_VALUE % ENERGY_BAR_WIDTH);
 
             int totalWidth = CENTER_WIDTH + (maxFullBars * 2 * ENERGY_BAR_WIDTH) + (maxPartialPixels * 2) + (2 * FRAME_WIDTH);
-            int startX = (screenWidth - totalWidth) / 2;
             
-            int yOffset = calculateYOffset(mc.player);
-            int startY = screenHeight - 51 - yOffset;
+            int[] position = calculateBarPosition(screenWidth, screenHeight, totalWidth, mc.player);
+            int startX = position[0];
+            int startY = position[1];
             
             int centerX = startX + FRAME_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
 
@@ -284,5 +285,86 @@ public class EnergyOverlayHandler {
         }
         
         return offset;
+    }
+    
+    private static boolean isBossBarVisible() {
+        Minecraft mc = Minecraft.getInstance();
+        try {
+            // Используем рефлексию для доступа к полю events
+            java.lang.reflect.Field[] fields = mc.gui.getBossOverlay().getClass().getDeclaredFields();
+            
+            for (java.lang.reflect.Field field : fields) {
+                if (java.util.Map.class.isAssignableFrom(field.getType())) {
+                    field.setAccessible(true);
+                    Object events = field.get(mc.gui.getBossOverlay());
+                    
+                    if (events instanceof java.util.Map) {
+                        java.util.Map<?, ?> eventMap = (java.util.Map<?, ?>) events;
+                        return !eventMap.isEmpty();
+                    }
+                }
+            }
+            
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    private static int getTopYPosition(boolean isTopCenter, boolean isTopRight) {
+        int baseOffset = 5; // Уменьшенный отступ от верха экрана
+        
+        // Добавляем отступ для босс-бара только для TOP_CENTER и только если босс-бар виден
+        int bossBarOffset = 0;
+        if (isTopCenter && isBossBarVisible()) {
+            bossBarOffset = 20;
+        }
+        
+        // Добавляем отступ для эффектов в TOP_RIGHT позиции
+        int effectsOffset = 0;
+        if (isTopRight) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && !mc.player.getActiveEffects().isEmpty()) {
+                effectsOffset = 32; // Высота иконки эффекта + небольшой отступ
+            }
+        }
+        
+        return baseOffset + bossBarOffset + effectsOffset;
+    }
+    
+    private static int[] calculateBarPosition(int screenWidth, int screenHeight, int totalWidth, Player player) {
+        MixEnergyConfig.EnergyBarPosition position = MixEnergyConfig.ENERGY_BAR_POSITION.get();
+        int x, y;
+        
+        switch (position) {
+            case TOP_LEFT:
+                x = 10;
+                y = getTopYPosition(false, false);
+                break;
+            case TOP_RIGHT:
+                x = screenWidth - totalWidth - 10;
+                y = getTopYPosition(false, true);
+                break;
+            case TOP_CENTER:
+                x = (screenWidth - totalWidth) / 2;
+                y = getTopYPosition(true, false);
+                break;
+            case BOTTOM_LEFT:
+                x = 10;
+                y = screenHeight - 20;
+                break;
+            case BOTTOM_RIGHT:
+                x = screenWidth - totalWidth - 10;
+                y = screenHeight - 20;
+                break;
+            case ABOVE_HOTBAR:
+            default:
+                x = (screenWidth - totalWidth) / 2;
+                int yOffset = calculateYOffset(player);
+                y = screenHeight - 51 - yOffset;
+                break;
+        }
+        
+        return new int[]{x, y};
     }
 }

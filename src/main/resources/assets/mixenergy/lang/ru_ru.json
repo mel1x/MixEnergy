@@ -1,3 +1,17 @@
 {
-  "effect.mixenergy.mix_energy_slowness": "Усталость"
-} 
+  "effect.mixenergy.mix_energy_slowness": "Усталость",
+  "mixenergy.config.title": "Настройки MixEnergy",
+  "mixenergy.config.position": "Позиция энергетического бара",
+  "mixenergy.config.position.description": "Выберите, где на экране будет отображаться энергетический бар",
+  "mixenergy.config.position.above_hotbar": "Над панелью быстрого доступа",
+  "mixenergy.config.position.top_left": "Верхний левый угол",
+  "mixenergy.config.position.top_right": "Верхний правый угол",
+  "mixenergy.config.position.top_center": "Верхний центр",
+  "mixenergy.config.position.bottom_left": "Нижний левый угол",
+  "mixenergy.config.position.bottom_right": "Нижний правый угол",
+  "mixenergy.config.block_breaking": "Трата энергии на разрушение блоков",
+  "mixenergy.config.attacks": "Трата энергии на атаки",
+  "mixenergy.config.enabled": "Включено",
+  "mixenergy.config.disabled": "Выключено",
+  "mixenergy.config.server_controlled": "Управляется сервером"
+}
