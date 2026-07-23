@@ -2,9 +2,12 @@ package com.m1x.mixenergy.common.entity;
 
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import com.m1x.mixenergy.registry.MixEnergyEntities;
-
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -16,155 +19,209 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkHooks;
 
+import java.util.List;
+
 public class EnergyOrbEntity extends Entity {
-    private static final float ENERGY_AMOUNT = 5.0f;
+    public static final float BASE_ENERGY_AMOUNT = 5.0f;
+
+    private static final EntityDataAccessor<Float> ENERGY_AMOUNT =
+            SynchedEntityData.defineId(EnergyOrbEntity.class, EntityDataSerializers.FLOAT);
+    private static final int MAX_AGE_TICKS = 6000;
+    private static final int PLAYER_SEARCH_INTERVAL_TICKS = 20;
+    private static final int MERGE_INTERVAL_TICKS = 20;
+    private static final double PLAYER_DETECTION_RANGE = 16.0;
+    private static final double VERTICAL_ATTRACTION_DISTANCE = 5.0;
+    private static final double MERGE_RANGE = 1.0;
+
     private int age;
-    private int health = 5;
-    private int value;
     private Player followingPlayer;
-    private int followingTime;
-    private static final double PLAYER_DETECTION_RANGE = 16.0D;
-    private static final double VERTICAL_ATTRACTION_DISTANCE = 5.0D;
+    private int playerSearchCooldown;
 
     public EnergyOrbEntity(EntityType<? extends EnergyOrbEntity> entityType, Level level) {
         super(entityType, level);
     }
 
-    public EnergyOrbEntity(Level level, double x, double y, double z) {
+    public EnergyOrbEntity(
+            Level level,
+            double x,
+            double y,
+            double z,
+            float energyAmount
+    ) {
         this(MixEnergyEntities.ENERGY_ORB.get(), level);
         setPos(x, y, z);
+        setEnergyAmount(energyAmount);
     }
 
     @Override
     protected void defineSynchedData() {
-        // No data to sync
+        entityData.define(ENERGY_AMOUNT, BASE_ENERGY_AMOUNT);
     }
 
     @Override
     public void tick() {
         super.tick();
-        
-        this.xo = this.getX();
-        this.yo = this.getY();
-        this.zo = this.getZ();
-        
-        // Floating behavior
-        if (this.onGround()) {
-            this.setDeltaMovement(this.getDeltaMovement().multiply(1.0D, -0.5D, 1.0D));
-        }
-        
-        // Move the entity
-        this.move(MoverType.SELF, this.getDeltaMovement());
-        
-        // Apply friction
-        this.setDeltaMovement(this.getDeltaMovement().multiply(0.98D, 0.98D, 0.98D));
-        
-        if (this.onGround()) {
-            this.setDeltaMovement(this.getDeltaMovement().multiply(0.7D, -0.5D, 0.7D));
-        }
-        
-        // Check for player to follow
-        if (this.followingTime > 0) {
-            --this.followingTime;
-        } else {
-            this.followingPlayer = this.level().getNearestPlayer(this, PLAYER_DETECTION_RANGE);
-            if (this.followingPlayer != null) {
-                this.followingTime = 20;
+
+        xo = getX();
+        yo = getY();
+        zo = getZ();
+
+        move(MoverType.SELF, getDeltaMovement());
+        setDeltaMovement(getDeltaMovement().multiply(0.98, 0.98, 0.98));
+
+        if (onGround()) {
+            Vec3 bouncedMovement = getDeltaMovement().multiply(0.7, -0.5, 0.7);
+            if (Math.abs(bouncedMovement.y) < 0.01) {
+                bouncedMovement = new Vec3(
+                        bouncedMovement.x,
+                        0.0,
+                        bouncedMovement.z
+                );
             }
+            setDeltaMovement(bouncedMovement);
         }
-        
-        // Follow nearby player
-        if (this.followingPlayer != null && this.followingPlayer.isSpectator()) {
-            this.followingPlayer = null;
+
+        updateFollowingPlayer();
+        moveTowardsFollowingPlayer();
+
+        if (!onGround()) {
+            double gravity = followingPlayer != null
+                    && followingPlayer.getY() > getY() + 2.0
+                    ? -0.01
+                    : -0.03;
+            setDeltaMovement(getDeltaMovement().add(0.0, gravity, 0.0));
         }
-        
-        if (this.followingPlayer != null) {
-            Vec3 playerPos = new Vec3(
-                this.followingPlayer.getX() - this.getX(),
-                this.followingPlayer.getY() + this.followingPlayer.getEyeHeight() / 2.0D - this.getY(),
-                this.followingPlayer.getZ() - this.getZ()
-            );
-            
-            double distance = playerPos.lengthSqr();
-            double horizontalDistance = new Vec3(playerPos.x, 0, playerPos.z).lengthSqr();
-            
-            if (distance < 1.0D) {
-                // Player is close enough to pick up the orb
-                if (this.followingPlayer instanceof ServerPlayer serverPlayer) {
-                    // Regenerate player's energy
-                    PlayerEnergyManager.regenerateEnergy(serverPlayer, ENERGY_AMOUNT);
-                    
-                    // Play pickup sound
-                    this.level().playSound(null, this.followingPlayer.getX(), this.followingPlayer.getY(), 
-                        this.followingPlayer.getZ(), SoundEvents.EXPERIENCE_ORB_PICKUP, 
-                        SoundSource.PLAYERS, 0.1F, 
-                        0.5F * ((this.random.nextFloat() - this.random.nextFloat()) * 0.7F + 1.8F));
-                    
-                    // Remove the orb
-                    this.discard();
-                }
-            } else if (distance < 144.0D) {
-                // Move towards player at a slower rate
-                double speed = 1.0D - Math.sqrt(distance) / 12.0D;
-                
-                // Создаем вектор движения
-                Vec3 movement = playerPos.normalize().scale(speed * 0.035D);
-                
-                // Если игрок высоко над частицей, увеличиваем вертикальную скорость
-                if (playerPos.y > VERTICAL_ATTRACTION_DISTANCE) {
-                    double verticalBoost = 0.04D + (playerPos.y / 20.0D); // Больше буст для большей высоты
-                    movement = new Vec3(movement.x, movement.y + verticalBoost, movement.z);
-                }
-                
-                // Если игрок близко на горизонтальной плоскости, но выше - фокусируемся на вертикальном движении
-                if (horizontalDistance < 4.0D && playerPos.y > 2.0D) {
-                    movement = new Vec3(movement.x * 0.8D, movement.y * 1.5D, movement.z * 0.8D);
-                }
-                
-                this.setDeltaMovement(this.getDeltaMovement().add(movement));
-            }
+
+        if (!level().isClientSide()
+                && tickCount % MERGE_INTERVAL_TICKS == Math.floorMod(getId(), MERGE_INTERVAL_TICKS)) {
+            mergeNearbyOrbs();
         }
-        
-        // Уменьшаем влияние гравитации для лучшего вертикального движения
-        if (!this.onGround()) {
-            // Проверяем, движется ли сфера к игроку вверх
-            if (this.followingPlayer != null && this.followingPlayer.getY() > this.getY() + 2.0D) {
-                // Уменьшенная гравитация, когда нужно подниматься к игроку
-                this.setDeltaMovement(this.getDeltaMovement().add(0.0D, -0.01D, 0.0D));
-            } else {
-                // Обычная гравитация
-                this.setDeltaMovement(this.getDeltaMovement().add(0.0D, -0.03D, 0.0D));
-            }
+
+        age++;
+        if (age >= MAX_AGE_TICKS) {
+            discard();
         }
-        
-        // Age the orb
-        ++this.age;
-        if (this.age >= 6000) { // Approximately 5 minutes
-            this.discard();
+    }
+
+    private void updateFollowingPlayer() {
+        if (followingPlayer != null
+                && (!followingPlayer.isAlive()
+                || followingPlayer.isSpectator()
+                || distanceToSqr(followingPlayer)
+                > PLAYER_DETECTION_RANGE * PLAYER_DETECTION_RANGE)) {
+            followingPlayer = null;
+            playerSearchCooldown = 0;
         }
+
+        if (followingPlayer != null) {
+            return;
+        }
+
+        if (playerSearchCooldown > 0) {
+            playerSearchCooldown--;
+            return;
+        }
+
+        followingPlayer = level().getNearestPlayer(this, PLAYER_DETECTION_RANGE);
+        playerSearchCooldown = PLAYER_SEARCH_INTERVAL_TICKS;
+    }
+
+    private void moveTowardsFollowingPlayer() {
+        if (followingPlayer == null || followingPlayer.isSpectator()) {
+            return;
+        }
+
+        Vec3 offset = new Vec3(
+                followingPlayer.getX() - getX(),
+                followingPlayer.getY() + followingPlayer.getEyeHeight() / 2.0 - getY(),
+                followingPlayer.getZ() - getZ()
+        );
+        double distanceSquared = offset.lengthSqr();
+
+        if (distanceSquared < 1.0) {
+            collect(followingPlayer);
+            return;
+        }
+        if (distanceSquared >= 144.0) {
+            return;
+        }
+
+        double attraction = 1.0 - Math.sqrt(distanceSquared) / 12.0;
+        Vec3 movement = offset.normalize().scale(attraction * 0.035);
+        double horizontalDistanceSquared = offset.x * offset.x + offset.z * offset.z;
+
+        if (offset.y > VERTICAL_ATTRACTION_DISTANCE) {
+            movement = movement.add(0.0, 0.04 + offset.y / 20.0, 0.0);
+        }
+        if (horizontalDistanceSquared < 4.0 && offset.y > 2.0) {
+            movement = new Vec3(movement.x * 0.8, movement.y * 1.5, movement.z * 0.8);
+        }
+
+        setDeltaMovement(getDeltaMovement().add(movement));
+    }
+
+    private void collect(Player player) {
+        if (!(player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+
+        PlayerEnergyManager.regenerateEnergy(serverPlayer, getEnergyAmount());
+        level().playSound(
+                null,
+                player.getX(),
+                player.getY(),
+                player.getZ(),
+                SoundEvents.EXPERIENCE_ORB_PICKUP,
+                SoundSource.PLAYERS,
+                0.1f,
+                0.5f * ((random.nextFloat() - random.nextFloat()) * 0.7f + 1.8f)
+        );
+        discard();
+    }
+
+    private void mergeNearbyOrbs() {
+        List<EnergyOrbEntity> nearby = level().getEntitiesOfClass(
+                EnergyOrbEntity.class,
+                getBoundingBox().inflate(MERGE_RANGE),
+                other -> other != this && other.isAlive()
+        );
+
+        for (EnergyOrbEntity other : nearby) {
+            setEnergyAmount(getEnergyAmount() + other.getEnergyAmount());
+            age = Math.min(age, other.age);
+            other.discard();
+        }
+    }
+
+    public float getEnergyAmount() {
+        return entityData.get(ENERGY_AMOUNT);
+    }
+
+    private void setEnergyAmount(float energyAmount) {
+        entityData.set(ENERGY_AMOUNT, Math.max(0.0f, energyAmount));
     }
 
     @Override
     public boolean isAttackable() {
         return false;
     }
-    
+
     @Override
-    protected void readAdditionalSaveData(net.minecraft.nbt.CompoundTag nbt) {
-        this.age = nbt.getShort("Age");
-        this.health = nbt.getShort("Health");
-        this.value = nbt.getShort("Value");
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        age = tag.getInt("Age");
+        if (tag.contains("EnergyAmount")) {
+            setEnergyAmount(tag.getFloat("EnergyAmount"));
+        }
     }
 
     @Override
-    protected void addAdditionalSaveData(net.minecraft.nbt.CompoundTag nbt) {
-        nbt.putShort("Age", (short)this.age);
-        nbt.putShort("Health", (short)this.health);
-        nbt.putShort("Value", (short)this.value);
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        tag.putInt("Age", age);
+        tag.putFloat("EnergyAmount", getEnergyAmount());
     }
 
     @Override
     public Packet<ClientGamePacketListener> getAddEntityPacket() {
         return NetworkHooks.getEntitySpawningPacket(this);
     }
-} 
+}

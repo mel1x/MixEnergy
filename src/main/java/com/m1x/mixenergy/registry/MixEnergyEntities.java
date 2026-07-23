@@ -17,6 +17,6 @@ public class MixEnergyEntities {
         () -> EntityType.Builder.<EnergyOrbEntity>of(EnergyOrbEntity::new, MobCategory.MISC)
             .sized(0.5F, 0.5F) // Size of the entity hitbox
             .clientTrackingRange(6) // Range at which clients will track this entity
-            .updateInterval(20) // How often the entity sends update packets
+            .updateInterval(2) // Smooth movement while the orb is attracted to a player
             .build("energy_orb"));
-} 
+}

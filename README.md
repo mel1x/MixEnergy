@@ -24,30 +24,57 @@ The **MixEnergy Mod** introduces a unique mechanic to Minecraft: **player energy
 
 - **_In creative mode energy doesn't working_**
 
-## Config
-In the latest versions of the mod, a config has been added that allows you to set the initial energy values, regeneration speed, and, if desired, disable the impact of energy on block breaking or attacking entities.
+## Configuration
+
+MixEnergy creates two files in the Minecraft or dedicated-server `config` directory:
+
+- `mixenergy-common.toml` contains authoritative gameplay rules. On a dedicated
+  server, edit this file on the server.
+- `mixenergy-client.toml` contains the local HUD position.
+
+In single-player, every energy source can also be changed from the mod settings
+screen. Changes are applied and saved immediately. During multiplayer, gameplay
+toggles are shown as server-controlled while the local HUD position remains
+editable.
 
 ### Example
-```
+
+```toml
 [general]
-  defaultMaxEnergy = 45.0
-  energyCostForBreakingBlocks = true
-  energyCostForAttacks = true
-  energyRegenCooldown = 1500
-  energyBarPosition = "above_hotbar"
+defaultMaxEnergy = 45.0
+# 20 server ticks = 1 second at normal TPS
+energyRegenCooldownTicks = 30
+
+[energy_sources]
+sprinting = true
+fastSwimming = true
+breakingBlocks = true
+placingBlocks = true
+attacks = true
+
+[energy_costs]
+# Movement costs are charged every server tick
+sprintingPerTick = 0.25
+fastSwimmingPerTick = 0.25
+breakingBlock = 2.0
+placingBlock = 1.0
+attack = 3.0
+
+[regeneration]
+# Restored per regeneration pulse; one pulse normally occurs every 3 ticks
+baseRate = 1.0
+maxRate = 1.8
 ```
 
-### Energy Bar Position Options
-You can now customize where the energy bar appears on your screen using the `energyBarPosition` setting:
+The HUD position is stored separately:
 
-- `above_hotbar` (default) - Above the hotbar, automatically adjusts for health/armor/air bars
-- `top_left` - Top left corner of the screen
-- `top_right` - Top right corner of the screen  
-- `top_center` - Top center of the screen
-- `bottom_left` - Bottom left corner of the screen
-- `bottom_right` - Bottom right corner of the screen
+```toml
+[hud]
+energyBarPosition = "ABOVE_HOTBAR"
+```
 
-**Note:** When using positions other than `above_hotbar`, the energy bar will not automatically adjust for other UI elements like health, armor, or air bars.
+Available positions are `ABOVE_HOTBAR`, `TOP_LEFT`, `TOP_RIGHT`, `TOP_CENTER`,
+`BOTTOM_LEFT`, and `BOTTOM_RIGHT`.
 
 
 ## Gameplay Impact

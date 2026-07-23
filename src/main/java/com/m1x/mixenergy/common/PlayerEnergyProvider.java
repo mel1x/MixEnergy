@@ -5,7 +5,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraftforge.common.capabilities.*;
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.common.capabilities.CapabilityManager;
+import net.minecraftforge.common.capabilities.CapabilityToken;
+import net.minecraftforge.common.capabilities.ICapabilitySerializable;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -13,20 +16,13 @@ import net.minecraftforge.fml.common.Mod;
 
 @Mod.EventBusSubscriber(modid = "mixenergy")
 public class PlayerEnergyProvider implements ICapabilitySerializable<CompoundTag> {
-    public static final Capability<PlayerEnergyData> PLAYER_ENERGY = CapabilityManager.get(new CapabilityToken<>(){});
-    public static final ResourceLocation IDENTIFIER = new ResourceLocation("mixenergy", "player_energy");
+    public static final Capability<PlayerEnergyData> PLAYER_ENERGY =
+            CapabilityManager.get(new CapabilityToken<>() {});
+    public static final ResourceLocation IDENTIFIER =
+            new ResourceLocation("mixenergy", "player_energy");
 
-    private PlayerEnergyData data;
-    private LazyOptional<PlayerEnergyData> optional;
-    
-    private boolean invalidated = false;
-
-    private CompoundTag lastSavedData = new CompoundTag();
-
-    public PlayerEnergyProvider() {
-        this.data = new PlayerEnergyData();
-        this.optional = LazyOptional.of(() -> this.data);
-    }
+    private final PlayerEnergyData data = new PlayerEnergyData();
+    private final LazyOptional<PlayerEnergyData> optional = LazyOptional.of(() -> data);
 
     @SubscribeEvent
     public static void attachCapability(AttachCapabilitiesEvent<Entity> event) {
@@ -38,53 +34,23 @@ public class PlayerEnergyProvider implements ICapabilitySerializable<CompoundTag
     }
 
     private void invalidate() {
-        if (!invalidated) {
-            this.lastSavedData = serializeNBT();
-            optional.invalidate();
-            invalidated = true;
-        }
-    }
-    
-    public void revive() {
-        if (invalidated) {
-            this.data = new PlayerEnergyData();
-            this.optional = LazyOptional.of(() -> this.data);
-            invalidated = false;
-            
-            if (!lastSavedData.isEmpty()) {
-                deserializeNBT(lastSavedData);
-                System.out.println("[MixEnergy] Revived capability with saved data: energy=" + 
-                    data.getEnergy() + ", maxEnergy=" + data.getMaxEnergy());
-            }
-        }
+        optional.invalidate();
     }
 
     @Override
-    public <T> LazyOptional<T> getCapability(Capability<T> cap, Direction side) {
-        if (invalidated) {
-            revive();
-        }
-        return PLAYER_ENERGY.orEmpty(cap, optional);
+    public <T> LazyOptional<T> getCapability(Capability<T> capability, Direction side) {
+        return PLAYER_ENERGY.orEmpty(capability, optional);
     }
 
     @Override
     public CompoundTag serializeNBT() {
         CompoundTag tag = new CompoundTag();
-        if (data != null) {
-            data.saveNBTData(tag);
-        }
+        data.saveNBTData(tag);
         return tag;
     }
 
     @Override
     public void deserializeNBT(CompoundTag tag) {
-        if (data != null) {
-            data.loadNBTData(tag);
-        } else {
-            this.data = new PlayerEnergyData();
-            this.data.loadNBTData(tag);
-            this.optional = LazyOptional.of(() -> this.data);
-        }
-        this.lastSavedData = tag.copy();
+        data.loadNBTData(tag);
     }
 }

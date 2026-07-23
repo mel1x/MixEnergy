@@ -1,370 +1,412 @@
 package com.m1x.mixenergy.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
+import com.m1x.mixenergy.common.PlayerEnergyManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 @Mod.EventBusSubscriber(modid = "mixenergy", value = Dist.CLIENT)
-public class EnergyOverlayHandler {
-    private static final ResourceLocation CENTER = new ResourceLocation("mixenergy", "textures/gui/energy_bar/center.png");
-    private static final ResourceLocation ENERGY_BAR_LEFT = new ResourceLocation("mixenergy", "textures/gui/energy_bar/energy_bar_left.png");
-    private static final ResourceLocation ENERGY_BAR_RIGHT = new ResourceLocation("mixenergy", "textures/gui/energy_bar/energy_bar_right.png");
-    private static final ResourceLocation ENERGY_BAR_BG_LEFT = new ResourceLocation("mixenergy", "textures/gui/energy_bar/energy_bar_bg_left.png");
-    private static final ResourceLocation ENERGY_BAR_BG_RIGHT = new ResourceLocation("mixenergy", "textures/gui/energy_bar/energy_bar_bg_right.png");
-    private static final ResourceLocation LEFT_FRAME = new ResourceLocation("mixenergy", "textures/gui/energy_bar/left_frame.png");
-    private static final ResourceLocation RIGHT_FRAME = new ResourceLocation("mixenergy", "textures/gui/energy_bar/right_frame.png");
+public final class EnergyOverlayHandler {
+    private static final ResourceLocation CENTER =
+            texture("textures/gui/energy_bar/center.png");
+    private static final ResourceLocation ENERGY_BAR_LEFT =
+            texture("textures/gui/energy_bar/energy_bar_left.png");
+    private static final ResourceLocation ENERGY_BAR_RIGHT =
+            texture("textures/gui/energy_bar/energy_bar_right.png");
+    private static final ResourceLocation ENERGY_BAR_BG_LEFT =
+            texture("textures/gui/energy_bar/energy_bar_bg_left.png");
+    private static final ResourceLocation ENERGY_BAR_BG_RIGHT =
+            texture("textures/gui/energy_bar/energy_bar_bg_right.png");
+    private static final ResourceLocation LEFT_FRAME =
+            texture("textures/gui/energy_bar/left_frame.png");
+    private static final ResourceLocation RIGHT_FRAME =
+            texture("textures/gui/energy_bar/right_frame.png");
+    private static final ResourceLocation[] CENTER_ANIMATION = new ResourceLocation[18];
 
     private static final int CENTER_WIDTH = 11;
-    private static final int CENTER_HEIGHT = 10;
-    private static final int ENERGY_BAR_WIDTH = 9;
-    private static final int ENERGY_BAR_HEIGHT = 10;
+    private static final int BAR_TEXTURE_WIDTH = 9;
+    private static final int BAR_HEIGHT = 10;
     private static final int FRAME_WIDTH = 3;
-    private static final int FRAME_HEIGHT = 10;
+    private static final int MAX_HALF_BAR_WIDTH = 90;
+    private static final int ANIMATION_FRAME_DURATION_MILLIS = 35;
+    private static final int FADE_DELAY_MILLIS = 2000;
+    private static final int FADE_TRANSITION_MILLIS = 260;
+    private static final int VISUAL_UPDATE_INTERVAL_TICKS = 4;
 
-    private static float ENERGY_VALUE = 27.0f;
-    private static float MAX_ENERGY_VALUE = 27.0f;
-
-    private static final ResourceLocation[] CENTER_ANIMATION = new ResourceLocation[18];
-    private static boolean isAnimating = false;
-    private static long animationStartTime = 0;
-    private static final int ANIMATION_FRAME_DURATION = 35;
-    private static final int TOTAL_ANIMATION_DURATION = ANIMATION_FRAME_DURATION * 18;
-
-    private static float lastEnergyValue = ENERGY_VALUE;
-    private static float overlayAlpha = 0.0f;
-    private static long lastEnergyChangeTime = 0;
-    private static final float FADE_DURATION = 2000.0f;
-    private static final float FADE_SPEED = 0.003f;
-    private static final float MIN_ALPHA = 0.0f;
-    private static final float MAX_ALPHA = 1.0f;
-    private static float targetAlpha = 0.0f;
+    private static float energyValue = 27.0f;
+    private static float displayedEnergyValue = 27.0f;
+    private static float maxEnergyValue = 27.0f;
+    private static float overlayAlpha;
+    private static long lastEnergyChangeTime = Util.getMillis();
+    private static long lastAlphaUpdateTime = Util.getMillis();
+    private static long animationStartTime;
+    private static int visualUpdateTicker;
+    private static boolean animating;
 
     static {
-        for (int i = 0; i < 18; i++) {
-            CENTER_ANIMATION[i] = new ResourceLocation("mixenergy",
-                    "textures/gui/energy_bar/center_full_" + (i + 1) + ".png");
+        for (int i = 0; i < CENTER_ANIMATION.length; i++) {
+            CENTER_ANIMATION[i] = texture(
+                    "textures/gui/energy_bar/center_full_" + (i + 1) + ".png"
+            );
         }
     }
 
-    public static void playCenterAnimation() {
-        isAnimating = true;
-        animationStartTime = System.currentTimeMillis();
+    private EnergyOverlayHandler() {
     }
 
-    private static void renderCenter(GuiGraphics guiGraphics, int x, int y) {
-        if (isAnimating) {
-            long currentTime = System.currentTimeMillis();
-            long elapsedTime = currentTime - animationStartTime;
-
-            if (elapsedTime >= TOTAL_ANIMATION_DURATION) {
-                isAnimating = false;
-                RenderSystem.setShaderTexture(0, CENTER);
-                guiGraphics.blit(CENTER, x, y, 0, 0, CENTER_WIDTH, CENTER_HEIGHT, CENTER_WIDTH, CENTER_HEIGHT);
-            } else {
-                int frameIndex = (int) (elapsedTime / ANIMATION_FRAME_DURATION);
-                frameIndex = Math.min(frameIndex, 17);
-
-                RenderSystem.setShaderTexture(0, CENTER_ANIMATION[frameIndex]);
-                guiGraphics.blit(CENTER_ANIMATION[frameIndex], x, y, 0, 0,
-                        CENTER_WIDTH, CENTER_HEIGHT, CENTER_WIDTH, CENTER_HEIGHT);
-            }
-        } else {
-            RenderSystem.setShaderTexture(0, CENTER);
-            guiGraphics.blit(CENTER, x, y, 0, 0, CENTER_WIDTH, CENTER_HEIGHT, CENTER_WIDTH, CENTER_HEIGHT);
-        }
+    private static ResourceLocation texture(String path) {
+        return new ResourceLocation("mixenergy", path);
     }
 
     public static float getEnergyValue() {
-        return ENERGY_VALUE;
+        return energyValue;
     }
 
     public static float getMaxEnergyValue() {
-        return MAX_ENERGY_VALUE;
-    }
-
-    private static void updateAlpha() {
-        long currentTime = System.currentTimeMillis();
-        long timeSinceChange = currentTime - lastEnergyChangeTime;
-
-        if (ENERGY_VALUE != lastEnergyValue) {
-            lastEnergyChangeTime = currentTime;
-            targetAlpha = MAX_ALPHA;
-            lastEnergyValue = ENERGY_VALUE;
-        }
-
-        if (ENERGY_VALUE <= 0) {
-            targetAlpha = MAX_ALPHA;
-        } else if (timeSinceChange > FADE_DURATION) {
-            targetAlpha = MIN_ALPHA;
-        }
-
-        if (Math.abs(overlayAlpha - targetAlpha) > 0.001f) {
-            float speed = FADE_SPEED;
-            if (overlayAlpha < targetAlpha) {
-                overlayAlpha = Math.min(overlayAlpha + speed, targetAlpha);
-            } else {
-                overlayAlpha = Math.max(overlayAlpha - speed, targetAlpha);
-            }
-        }
+        return maxEnergyValue;
     }
 
     public static void setEnergyValue(float value) {
-        float oldValue = ENERGY_VALUE;
-        ENERGY_VALUE = Math.max(0, Math.min(value, MAX_ENERGY_VALUE));
-        
-        if (oldValue != ENERGY_VALUE) {
-            lastEnergyChangeTime = System.currentTimeMillis();
-            targetAlpha = MAX_ALPHA;
+        float previous = energyValue;
+        energyValue = Mth.clamp(value, 0.0f, maxEnergyValue);
+
+        if (previous != energyValue) {
+            lastEnergyChangeTime = Util.getMillis();
         }
-        
-        if (oldValue < MAX_ENERGY_VALUE && ENERGY_VALUE >= MAX_ENERGY_VALUE) {
-            playCenterAnimation();
+        if (previous < maxEnergyValue && energyValue >= maxEnergyValue) {
+            animating = true;
+            animationStartTime = Util.getMillis();
         }
-        
-        lastEnergyValue = oldValue;
+        if (energyValue < PlayerEnergyManager.SPRINT_ENERGY_THRESHOLD) {
+            displayedEnergyValue = energyValue;
+        }
     }
 
     public static void setMaxEnergyValue(float value) {
-        float oldMaxValue = MAX_ENERGY_VALUE;
-        MAX_ENERGY_VALUE = value;
-        ENERGY_VALUE = Math.min(ENERGY_VALUE, MAX_ENERGY_VALUE);
-        
-        if (ENERGY_VALUE >= MAX_ENERGY_VALUE && oldMaxValue != MAX_ENERGY_VALUE) {
-            playCenterAnimation();
+        maxEnergyValue = Math.max(1.0f, value);
+        energyValue = Math.min(energyValue, maxEnergyValue);
+        displayedEnergyValue = Math.min(displayedEnergyValue, maxEnergyValue);
+    }
+
+    @SubscribeEvent
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END
+                || ++visualUpdateTicker < VISUAL_UPDATE_INTERVAL_TICKS) {
+            return;
+        }
+        visualUpdateTicker = 0;
+
+        if (Math.abs(energyValue - displayedEnergyValue) < 0.05f) {
+            displayedEnergyValue = energyValue;
+        } else {
+            displayedEnergyValue = Mth.lerp(
+                    0.4f,
+                    displayedEnergyValue,
+                    energyValue
+            );
         }
     }
 
     @SubscribeEvent
     public static void onRenderGameOverlay(RenderGuiOverlayEvent.Post event) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
+        if (event.getOverlay() != VanillaGuiOverlay.HOTBAR.type()) {
+            return;
+        }
 
-        GameType gameMode = mc.gameMode.getPlayerMode();
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        if (player == null || minecraft.gameMode == null) {
+            return;
+        }
+
+        GameType gameMode = minecraft.gameMode.getPlayerMode();
         if (gameMode != GameType.SURVIVAL && gameMode != GameType.ADVENTURE) {
             return;
         }
 
         updateAlpha();
-
-        if (overlayAlpha <= MIN_ALPHA && ENERGY_VALUE > 0) {
+        if (overlayAlpha <= 0.001f && energyValue > 0.0f) {
             return;
         }
 
-        if (event.getOverlay() == VanillaGuiOverlay.HOTBAR.type()) {
-            GuiGraphics guiGraphics = event.getGuiGraphics();
-            int screenWidth = mc.getWindow().getGuiScaledWidth();
-            int screenHeight = mc.getWindow().getGuiScaledHeight();
+        GuiGraphics graphics = event.getGuiGraphics();
+        int screenWidth = minecraft.getWindow().getGuiScaledWidth();
+        int screenHeight = minecraft.getWindow().getGuiScaledHeight();
+        int availableHalfWidth = Math.max(
+                BAR_TEXTURE_WIDTH,
+                (screenWidth - CENTER_WIDTH - 2 * FRAME_WIDTH - 20) / 2
+        );
+        int halfWidth = Mth.clamp(
+                Math.round(maxEnergyValue),
+                BAR_TEXTURE_WIDTH,
+                Math.min(MAX_HALF_BAR_WIDTH, availableHalfWidth)
+        );
+        int totalWidth = 2 * FRAME_WIDTH + 2 * halfWidth + CENTER_WIDTH;
+        int[] position = calculateBarPosition(
+                screenWidth,
+                screenHeight,
+                totalWidth,
+                player
+        );
 
-            int fullBars = (int) (ENERGY_VALUE / ENERGY_BAR_WIDTH);
-            int partialPixels = (int) (ENERGY_VALUE % ENERGY_BAR_WIDTH);
+        float ratio = Mth.clamp(displayedEnergyValue / maxEnergyValue, 0.0f, 1.0f);
+        int filledHalfWidth = Math.round(halfWidth * ratio);
+        renderBar(graphics, position[0], position[1], halfWidth, filledHalfWidth);
+    }
 
-            int maxFullBars = (int) (MAX_ENERGY_VALUE / ENERGY_BAR_WIDTH);
-            int maxPartialPixels = (int) (MAX_ENERGY_VALUE % ENERGY_BAR_WIDTH);
+    private static void updateAlpha() {
+        long now = Util.getMillis();
+        long elapsed = Math.min(100L, Math.max(0L, now - lastAlphaUpdateTime));
+        lastAlphaUpdateTime = now;
 
-            int totalWidth = CENTER_WIDTH + (maxFullBars * 2 * ENERGY_BAR_WIDTH) + (maxPartialPixels * 2) + (2 * FRAME_WIDTH);
-            
-            int[] position = calculateBarPosition(screenWidth, screenHeight, totalWidth, mc.player);
-            int startX = position[0];
-            int startY = position[1];
-            
-            int centerX = startX + FRAME_WIDTH + (maxFullBars * ENERGY_BAR_WIDTH) + maxPartialPixels;
+        float target = energyValue <= 0.0f
+                || now - lastEnergyChangeTime <= FADE_DELAY_MILLIS
+                ? 1.0f
+                : 0.0f;
+        float step = elapsed / (float) FADE_TRANSITION_MILLIS;
 
-            int initialX = startX;
-            int leftEnergyEndX = centerX;
-
-            RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
-
-            RenderSystem.setShaderTexture(0, LEFT_FRAME);
-            guiGraphics.blit(LEFT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
-            startX += FRAME_WIDTH;
-
-            for (int i = 0; i < maxFullBars; i++) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_LEFT);
-                guiGraphics.blit(ENERGY_BAR_BG_LEFT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
-                        ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-            startX += maxFullBars * ENERGY_BAR_WIDTH;
-
-            if (maxPartialPixels > 0) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_LEFT);
-                guiGraphics.blit(ENERGY_BAR_BG_LEFT, startX, startY, 0, 0,
-                        maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-
-            startX = leftEnergyEndX - (fullBars * ENERGY_BAR_WIDTH) - partialPixels;
-
-            if (partialPixels > 0) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_LEFT);
-                guiGraphics.blit(ENERGY_BAR_LEFT, startX, startY,
-                        ENERGY_BAR_WIDTH - partialPixels, 0,
-                        partialPixels, ENERGY_BAR_HEIGHT,
-                        ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-                startX += partialPixels;
-            }
-
-            for (int i = 0; i < fullBars; i++) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_LEFT);
-                guiGraphics.blit(ENERGY_BAR_LEFT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
-                        ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-
-            startX = centerX;
-            renderCenter(guiGraphics, startX, startY);
-            startX += CENTER_WIDTH;
-
-            int afterCenterX = startX;
-
-            for (int i = 0; i < maxFullBars; i++) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_RIGHT);
-                guiGraphics.blit(ENERGY_BAR_BG_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
-                        ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-            startX += maxFullBars * ENERGY_BAR_WIDTH;
-
-            if (maxPartialPixels > 0) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_BG_RIGHT);
-                guiGraphics.blit(ENERGY_BAR_BG_RIGHT, startX, startY, 0, 0,
-                        maxPartialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-
-            startX = afterCenterX;
-
-            for (int i = 0; i < fullBars; i++) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_RIGHT);
-                guiGraphics.blit(ENERGY_BAR_RIGHT, startX + (i * ENERGY_BAR_WIDTH), startY, 0, 0,
-                        ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-            startX += fullBars * ENERGY_BAR_WIDTH;
-
-            if (partialPixels > 0) {
-                RenderSystem.setShaderTexture(0, ENERGY_BAR_RIGHT);
-                guiGraphics.blit(ENERGY_BAR_RIGHT, startX, startY, 0, 0,
-                        partialPixels, ENERGY_BAR_HEIGHT, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
-            }
-
-            startX = initialX + totalWidth - FRAME_WIDTH;
-            RenderSystem.setShaderTexture(0, RIGHT_FRAME);
-            guiGraphics.blit(RIGHT_FRAME, startX, startY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
-
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-            RenderSystem.disableBlend();
+        if (overlayAlpha < target) {
+            overlayAlpha = Math.min(target, overlayAlpha + step);
+        } else if (overlayAlpha > target) {
+            overlayAlpha = Math.max(target, overlayAlpha - step);
         }
     }
 
-    private static int calculateYOffset(Player player) {
-        int offset = 0;
-        boolean hasLeftSideElements = false;
-        
-        float healthAndAbsorption = player.getHealth() + player.getAbsorptionAmount();
-        int healthRows = (int) Math.ceil(healthAndAbsorption / 20.0f);
-        
-        if (healthRows > 1) {
-            offset += (healthRows - 1) * 10;
-            hasLeftSideElements = true;
-        }
-        
-        if (player.getArmorValue() > 0) {
-            offset += 10;
-            hasLeftSideElements = true;
-        }
-        
-        boolean isUnderwater = player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER) || 
-                              player.getAirSupply() < player.getMaxAirSupply();
-        if (isUnderwater && !hasLeftSideElements) {
-            offset += 10;
-        }
-        
-        return offset;
+    private static void renderBar(
+            GuiGraphics graphics,
+            int startX,
+            int y,
+            int halfWidth,
+            int filledHalfWidth
+    ) {
+        int leftInnerX = startX + FRAME_WIDTH;
+        int centerX = leftInnerX + halfWidth;
+        int rightInnerX = centerX + CENTER_WIDTH;
+
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
+
+        graphics.blit(
+                LEFT_FRAME,
+                startX,
+                y,
+                0,
+                0,
+                FRAME_WIDTH,
+                BAR_HEIGHT,
+                FRAME_WIDTH,
+                BAR_HEIGHT
+        );
+        renderTiled(graphics, ENERGY_BAR_BG_LEFT, leftInnerX, y, halfWidth);
+        renderLeftFill(graphics, centerX, y, filledHalfWidth);
+        renderCenter(graphics, centerX, y);
+        renderTiled(graphics, ENERGY_BAR_BG_RIGHT, rightInnerX, y, halfWidth);
+        renderTiled(graphics, ENERGY_BAR_RIGHT, rightInnerX, y, filledHalfWidth);
+        graphics.blit(
+                RIGHT_FRAME,
+                rightInnerX + halfWidth,
+                y,
+                0,
+                0,
+                FRAME_WIDTH,
+                BAR_HEIGHT,
+                FRAME_WIDTH,
+                BAR_HEIGHT
+        );
+
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        RenderSystem.disableBlend();
     }
-    
-    private static boolean isBossBarVisible() {
-        Minecraft mc = Minecraft.getInstance();
-        try {
-            // Используем рефлексию для доступа к полю events
-            java.lang.reflect.Field[] fields = mc.gui.getBossOverlay().getClass().getDeclaredFields();
-            
-            for (java.lang.reflect.Field field : fields) {
-                if (java.util.Map.class.isAssignableFrom(field.getType())) {
-                    field.setAccessible(true);
-                    Object events = field.get(mc.gui.getBossOverlay());
-                    
-                    if (events instanceof java.util.Map) {
-                        java.util.Map<?, ?> eventMap = (java.util.Map<?, ?>) events;
-                        return !eventMap.isEmpty();
-                    }
-                }
+
+    private static void renderLeftFill(
+            GuiGraphics graphics,
+            int centerX,
+            int y,
+            int width
+    ) {
+        int fullSegments = width / BAR_TEXTURE_WIDTH;
+        int partialWidth = width % BAR_TEXTURE_WIDTH;
+        int x = centerX - width;
+
+        if (partialWidth > 0) {
+            graphics.blit(
+                    ENERGY_BAR_LEFT,
+                    x,
+                    y,
+                    BAR_TEXTURE_WIDTH - partialWidth,
+                    0,
+                    partialWidth,
+                    BAR_HEIGHT,
+                    BAR_TEXTURE_WIDTH,
+                    BAR_HEIGHT
+            );
+            x += partialWidth;
+        }
+
+        for (int segment = 0; segment < fullSegments; segment++) {
+            graphics.blit(
+                    ENERGY_BAR_LEFT,
+                    x + segment * BAR_TEXTURE_WIDTH,
+                    y,
+                    0,
+                    0,
+                    BAR_TEXTURE_WIDTH,
+                    BAR_HEIGHT,
+                    BAR_TEXTURE_WIDTH,
+                    BAR_HEIGHT
+            );
+        }
+    }
+
+    private static void renderTiled(
+            GuiGraphics graphics,
+            ResourceLocation texture,
+            int x,
+            int y,
+            int width
+    ) {
+        int fullSegments = width / BAR_TEXTURE_WIDTH;
+        int partialWidth = width % BAR_TEXTURE_WIDTH;
+
+        for (int segment = 0; segment < fullSegments; segment++) {
+            graphics.blit(
+                    texture,
+                    x + segment * BAR_TEXTURE_WIDTH,
+                    y,
+                    0,
+                    0,
+                    BAR_TEXTURE_WIDTH,
+                    BAR_HEIGHT,
+                    BAR_TEXTURE_WIDTH,
+                    BAR_HEIGHT
+            );
+        }
+
+        if (partialWidth > 0) {
+            graphics.blit(
+                    texture,
+                    x + fullSegments * BAR_TEXTURE_WIDTH,
+                    y,
+                    0,
+                    0,
+                    partialWidth,
+                    BAR_HEIGHT,
+                    BAR_TEXTURE_WIDTH,
+                    BAR_HEIGHT
+            );
+        }
+    }
+
+    private static void renderCenter(GuiGraphics graphics, int x, int y) {
+        ResourceLocation texture = CENTER;
+        if (animating) {
+            long elapsed = Util.getMillis() - animationStartTime;
+            int frame = (int) (elapsed / ANIMATION_FRAME_DURATION_MILLIS);
+            if (frame >= CENTER_ANIMATION.length) {
+                animating = false;
+            } else {
+                texture = CENTER_ANIMATION[frame];
             }
-            
-            return false;
-        } catch (Exception e) {
-            return false;
         }
+
+        graphics.blit(
+                texture,
+                x,
+                y,
+                0,
+                0,
+                CENTER_WIDTH,
+                BAR_HEIGHT,
+                CENTER_WIDTH,
+                BAR_HEIGHT
+        );
     }
-    
-    private static int getTopYPosition(boolean isTopCenter, boolean isTopRight) {
-        int baseOffset = 5; // Уменьшенный отступ от верха экрана
-        
-        // Добавляем отступ для босс-бара только для TOP_CENTER и только если босс-бар виден
-        int bossBarOffset = 0;
-        if (isTopCenter && isBossBarVisible()) {
-            bossBarOffset = 20;
-        }
-        
-        // Добавляем отступ для эффектов в TOP_RIGHT позиции
-        int effectsOffset = 0;
-        if (isTopRight) {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.player != null && !mc.player.getActiveEffects().isEmpty()) {
-                effectsOffset = 32; // Высота иконки эффекта + небольшой отступ
+
+    private static int[] calculateBarPosition(
+            int screenWidth,
+            int screenHeight,
+            int totalWidth,
+            Player player
+    ) {
+        int margin = 10;
+        int x;
+        int y;
+
+        switch (MixEnergyConfig.ENERGY_BAR_POSITION.get()) {
+            case TOP_LEFT -> {
+                x = margin;
+                y = 8;
             }
-        }
-        
-        return baseOffset + bossBarOffset + effectsOffset;
-    }
-    
-    private static int[] calculateBarPosition(int screenWidth, int screenHeight, int totalWidth, Player player) {
-        MixEnergyConfig.EnergyBarPosition position = MixEnergyConfig.ENERGY_BAR_POSITION.get();
-        int x, y;
-        
-        switch (position) {
-            case TOP_LEFT:
-                x = 10;
-                y = getTopYPosition(false, false);
-                break;
-            case TOP_RIGHT:
-                x = screenWidth - totalWidth - 10;
-                y = getTopYPosition(false, true);
-                break;
-            case TOP_CENTER:
+            case TOP_RIGHT -> {
+                x = screenWidth - totalWidth - margin;
+                y = player.getActiveEffects().isEmpty() ? 8 : 40;
+            }
+            case TOP_CENTER -> {
                 x = (screenWidth - totalWidth) / 2;
-                y = getTopYPosition(true, false);
-                break;
-            case BOTTOM_LEFT:
-                x = 10;
+                y = 25;
+            }
+            case BOTTOM_LEFT -> {
+                x = margin;
                 y = screenHeight - 20;
-                break;
-            case BOTTOM_RIGHT:
-                x = screenWidth - totalWidth - 10;
+            }
+            case BOTTOM_RIGHT -> {
+                x = screenWidth - totalWidth - margin;
                 y = screenHeight - 20;
-                break;
-            case ABOVE_HOTBAR:
-            default:
+            }
+            case ABOVE_HOTBAR -> {
                 x = (screenWidth - totalWidth) / 2;
-                int yOffset = calculateYOffset(player);
-                y = screenHeight - 51 - yOffset;
-                break;
+                y = screenHeight - 51 - calculateHotbarOffset(player);
+            }
+            default -> throw new IllegalStateException("Unknown energy bar position");
         }
-        
+
         return new int[]{x, y};
+    }
+
+    private static int calculateHotbarOffset(Player player) {
+        int leftOffset = 0;
+        boolean leftHudOccupied = false;
+        int healthRows = Mth.ceil((player.getHealth() + player.getAbsorptionAmount()) / 20.0f);
+
+        if (healthRows > 1) {
+            leftOffset += (healthRows - 1) * 10;
+            leftHudOccupied = true;
+        }
+        if (player.getArmorValue() > 0) {
+            leftOffset += 10;
+            leftHudOccupied = true;
+        }
+
+        int rightOffset = 0;
+        if (player.getVehicle() instanceof LivingEntity vehicle && vehicle.isAlive()) {
+            int vehicleHealthRows = Mth.clamp(
+                    Mth.ceil(vehicle.getMaxHealth() / 20.0f),
+                    1,
+                    2
+            );
+            rightOffset = (vehicleHealthRows - 1) * 10;
+        }
+
+        boolean underwater = player.isEyeInFluid(FluidTags.WATER)
+                || player.getAirSupply() < player.getMaxAirSupply();
+        if (underwater && !leftHudOccupied) {
+            rightOffset = Math.max(rightOffset, 10);
+        }
+
+        return Math.max(leftOffset, rightOffset);
     }
 }

@@ -1,85 +1,60 @@
 package com.m1x.mixenergy.network;
 
+import com.m1x.mixenergy.client.ClientMovementHandler;
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
+
 import java.util.function.Supplier;
 
 public class EnergyActionPacket {
     private final ActionType actionType;
-    private final float amount;
 
     public enum ActionType {
-        CONSUME,
-        REGENERATE,
-        STOP_SWIMMING
+        STOP_SWIMMING,
+        FAST_SWIMMING_START,
+        FAST_SWIMMING_STOP
     }
 
-    public EnergyActionPacket(ActionType actionType, float amount) {
-        this.actionType = actionType;
-        this.amount = amount;
-    }
-    
     public EnergyActionPacket(ActionType actionType) {
-        this(actionType, 0.0f);
+        this.actionType = actionType;
     }
 
-    public static void encode(EnergyActionPacket msg, FriendlyByteBuf buf) {
-        buf.writeEnum(msg.actionType);
-        buf.writeFloat(msg.amount);
+    public static void encode(EnergyActionPacket message, FriendlyByteBuf buffer) {
+        buffer.writeEnum(message.actionType);
     }
 
-    public static EnergyActionPacket decode(FriendlyByteBuf buf) {
-        return new EnergyActionPacket(buf.readEnum(ActionType.class), buf.readFloat());
+    public static EnergyActionPacket decode(FriendlyByteBuf buffer) {
+        return new EnergyActionPacket(buffer.readEnum(ActionType.class));
     }
 
-    public static void handle(EnergyActionPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (ctx.get().getDirection().getReceptionSide().isServer()) {
-                ServerPlayer player = ctx.get().getSender();
-                if (player != null) {
-                    PlayerEnergyManager.handleAction(player, msg.actionType, msg.amount);
+    public static void handle(EnergyActionPacket message, Supplier<NetworkEvent.Context> contextSupplier) {
+        NetworkEvent.Context context = contextSupplier.get();
+        context.enqueueWork(() -> {
+            if (context.getDirection().getReceptionSide().isClient()) {
+                if (message.actionType != ActionType.STOP_SWIMMING) {
+                    return;
                 }
-            } else if (ctx.get().getDirection().getReceptionSide().isClient()) {
-                if (msg.actionType == ActionType.STOP_SWIMMING) {
-                    net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-                    if (mc.player != null) {
-                        // Полное отключение плавания на клиенте
-                        mc.player.setSwimming(false);
-                        
-                        // Сбрасываем флаг плавания с помощью рефлексии
-                        try {
-                            java.lang.reflect.Field isSwimmingField = 
-                                net.minecraft.world.entity.LivingEntity.class.getDeclaredField("f_20899_");
-                            isSwimmingField.setAccessible(true);
-                            isSwimmingField.set(mc.player, false);
-                        } catch (Exception e) {
-                            // Запасной вариант, если рефлексия не сработала
-                            mc.player.setSwimming(false);
-                        }
-                        
-                        // Сбрасываем состояние спринта и использования предметов
-                        mc.player.setSprinting(false);
-                        mc.player.stopUsingItem();
-                        
-                        // Если игрок в воде, можно дополнительно изменить атрибуты на клиенте
-                        if (mc.player.isInWater()) {
-                            try {
-                                // Попытка вызвать метод плавания с false
-                                java.lang.reflect.Method swimMethod = 
-                                    net.minecraft.client.player.LocalPlayer.class.getDeclaredMethod("setSwimming", boolean.class);
-                                swimMethod.setAccessible(true);
-                                swimMethod.invoke(mc.player, false);
-                            } catch (Exception e) {
-                                // Если метод не найден, используем стандартный
-                                mc.player.setSwimming(false);
-                            }
-                        }
+                DistExecutor.unsafeRunWhenOn(
+                        Dist.CLIENT,
+                        () -> ClientMovementHandler::forceStopFastMovement
+                );
+                return;
+            }
+
+            if (context.getSender() != null) {
+                switch (message.actionType) {
+                    case FAST_SWIMMING_START ->
+                            PlayerEnergyManager.setClientFastSwimming(context.getSender(), true);
+                    case FAST_SWIMMING_STOP ->
+                            PlayerEnergyManager.setClientFastSwimming(context.getSender(), false);
+                    case STOP_SWIMMING -> {
                     }
                 }
             }
         });
-        ctx.get().setPacketHandled(true);
+        context.setPacketHandled(true);
     }
 }
