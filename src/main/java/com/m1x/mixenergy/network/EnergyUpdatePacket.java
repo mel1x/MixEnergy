@@ -14,19 +14,22 @@ public class EnergyUpdatePacket {
     private final float energyTrendPerTick;
     private final float sprintCostPerTick;
     private final float swimmingCostPerTick;
+    private final boolean instantVisual;
 
     public EnergyUpdatePacket(
             float energy,
             float maxEnergy,
             float energyTrendPerTick,
             float sprintCostPerTick,
-            float swimmingCostPerTick
+            float swimmingCostPerTick,
+            boolean instantVisual
     ) {
         this.energy = energy;
         this.maxEnergy = maxEnergy;
         this.energyTrendPerTick = energyTrendPerTick;
         this.sprintCostPerTick = sprintCostPerTick;
         this.swimmingCostPerTick = swimmingCostPerTick;
+        this.instantVisual = instantVisual;
     }
 
     public static void encode(EnergyUpdatePacket message, FriendlyByteBuf buffer) {
@@ -35,6 +38,7 @@ public class EnergyUpdatePacket {
         buffer.writeFloat(message.energyTrendPerTick);
         buffer.writeFloat(message.sprintCostPerTick);
         buffer.writeFloat(message.swimmingCostPerTick);
+        buffer.writeBoolean(message.instantVisual);
     }
 
     public static EnergyUpdatePacket decode(FriendlyByteBuf buffer) {
@@ -43,7 +47,8 @@ public class EnergyUpdatePacket {
                 buffer.readFloat(),
                 buffer.readFloat(),
                 buffer.readFloat(),
-                buffer.readFloat()
+                buffer.readFloat(),
+                buffer.readBoolean()
         );
     }
 
@@ -61,7 +66,8 @@ public class EnergyUpdatePacket {
                                 message.maxEnergy,
                                 message.energyTrendPerTick,
                                 message.sprintCostPerTick,
-                                message.swimmingCostPerTick
+                                message.swimmingCostPerTick,
+                                message.instantVisual
                         )
                 );
             }

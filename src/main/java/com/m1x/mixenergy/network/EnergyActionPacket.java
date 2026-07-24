@@ -15,7 +15,8 @@ public class EnergyActionPacket {
     public enum ActionType {
         STOP_SWIMMING,
         FAST_SWIMMING_START,
-        FAST_SWIMMING_STOP
+        FAST_SWIMMING_STOP,
+        BETTER_COMBAT_ATTACK_START
     }
 
     public EnergyActionPacket(ActionType actionType) {
@@ -50,6 +51,8 @@ public class EnergyActionPacket {
                             PlayerEnergyManager.setClientFastSwimming(context.getSender(), true);
                     case FAST_SWIMMING_STOP ->
                             PlayerEnergyManager.setClientFastSwimming(context.getSender(), false);
+                    case BETTER_COMBAT_ATTACK_START ->
+                            PlayerEnergyManager.beginBetterCombatAttack(context.getSender());
                     case STOP_SWIMMING -> {
                     }
                 }

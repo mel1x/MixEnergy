@@ -21,6 +21,7 @@ public final class MixEnergyConfig {
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_ATTACKS;
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_JUMPING;
     public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_COMBAT_ROLL;
+    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_BETTER_COMBAT;
 
     public static final ForgeConfigSpec.DoubleValue SPRINT_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue FAST_SWIMMING_ENERGY_COST;
@@ -28,6 +29,8 @@ public final class MixEnergyConfig {
     public static final ForgeConfigSpec.DoubleValue BLOCK_PLACE_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue ATTACK_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue JUMP_ENERGY_COST;
+    public static final ForgeConfigSpec.DoubleValue COMBAT_ROLL_ENERGY_COST;
+    public static final ForgeConfigSpec.DoubleValue BETTER_COMBAT_ATTACK_ENERGY_COST;
     public static final ForgeConfigSpec.DoubleValue BASE_ENERGY_REGEN_RATE;
     public static final ForgeConfigSpec.DoubleValue MAX_ENERGY_REGEN_RATE;
     public static final ForgeConfigSpec.DoubleValue ENERGY_REGEN_SPEED_MULTIPLIER;
@@ -79,9 +82,14 @@ public final class MixEnergyConfig {
                 .define("jumping", false);
 
         ENERGY_COST_FOR_COMBAT_ROLL = commonBuilder
-                .comment("Spend the configured cost of three seconds of sprinting for each Combat Roll.")
+                .comment("Spend energy for each Combat Roll.")
                 .comment("This setting is used only when the Combat Roll mod is installed.")
                 .define("combatRoll", true);
+
+        ENERGY_COST_FOR_BETTER_COMBAT = commonBuilder
+                .comment("Spend energy once for each Better Combat attack, including missed attacks.")
+                .comment("This setting is used only when the Better Combat mod is installed.")
+                .define("betterCombat", true);
 
         commonBuilder.pop();
         commonBuilder
@@ -111,6 +119,15 @@ public final class MixEnergyConfig {
         JUMP_ENERGY_COST = commonBuilder
                 .comment("Energy spent for a jump when the jumping source is enabled.")
                 .defineInRange("jump", 1.0, 0.0, 1000.0);
+
+        COMBAT_ROLL_ENERGY_COST = commonBuilder
+                .comment("Energy spent instantly for each Combat Roll.")
+                .defineInRange("combatRoll", 15.0, 0.0, 1000.0);
+
+        BETTER_COMBAT_ATTACK_ENERGY_COST = commonBuilder
+                .comment("Energy spent instantly for each Better Combat attack or combo step.")
+                .comment("The cost is charged once per swing, not once per target hit.")
+                .defineInRange("betterCombatAttack", 3.0, 0.0, 1000.0);
 
         commonBuilder.pop();
         commonBuilder

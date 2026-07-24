@@ -19,6 +19,7 @@ import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.Map;
@@ -34,8 +35,11 @@ public final class PlayerEnergyManager {
     private static final int CLIENT_SYNC_INTERVAL_TICKS = 10;
     private static final long REGEN_INTERVAL_TICKS = 3L;
     private static final long MAX_REGEN_BOOST_TIME_TICKS = 60L;
+    private static final long BETTER_COMBAT_ATTACK_TIMEOUT_TICKS = 60L;
 
     private static final Map<UUID, SyncState> SYNC_STATES = new ConcurrentHashMap<>();
+    private static final Map<UUID, BetterCombatAttackState> BETTER_COMBAT_ATTACKS =
+            new ConcurrentHashMap<>();
     private static final Set<UUID> CLIENT_FAST_SWIMMING = ConcurrentHashMap.newKeySet();
 
     private PlayerEnergyManager() {
@@ -215,6 +219,14 @@ public final class PlayerEnergyManager {
     }
 
     public static void consumeEnergy(ServerPlayer player, float amount) {
+        consumeEnergy(player, amount, false);
+    }
+
+    private static void consumeEnergy(
+            ServerPlayer player,
+            float amount,
+            boolean instantVisual
+    ) {
         if (amount <= 0.0f || !usesEnergy(player)) {
             return;
         }
@@ -228,7 +240,7 @@ public final class PlayerEnergyManager {
                 forceStopFastMovement(player);
             }
 
-            syncEnergyToClient(player, energyData);
+            syncEnergyToClient(player, energyData, true, instantVisual);
         });
     }
 
@@ -237,9 +249,36 @@ public final class PlayerEnergyManager {
             return;
         }
 
-        float threeSecondsOfSprinting =
-                MixEnergyConfig.SPRINT_ENERGY_COST.get().floatValue() * 60.0f;
-        consumeEnergy(player, threeSecondsOfSprinting);
+        consumeEnergy(
+                player,
+                MixEnergyConfig.COMBAT_ROLL_ENERGY_COST.get().floatValue(),
+                true
+        );
+    }
+
+    public static void beginBetterCombatAttack(ServerPlayer player) {
+        if (!ModList.get().isLoaded("bettercombat")) {
+            return;
+        }
+
+        long gameTime = player.serverLevel().getGameTime();
+        BetterCombatAttackState previous = BETTER_COMBAT_ATTACKS.get(player.getUUID());
+        if (previous != null && previous.gameTime() == gameTime) {
+            return;
+        }
+
+        boolean allowed = true;
+        if (MixEnergyConfig.ENERGY_COST_FOR_BETTER_COMBAT.get()) {
+            allowed = tryConsumeEnergy(
+                    player,
+                    MixEnergyConfig.BETTER_COMBAT_ATTACK_ENERGY_COST.get().floatValue(),
+                    true
+            );
+        }
+        BETTER_COMBAT_ATTACKS.put(
+                player.getUUID(),
+                new BetterCombatAttackState(gameTime, allowed)
+        );
     }
 
     public static void regenerateEnergy(ServerPlayer player, float amount) {
@@ -257,6 +296,18 @@ public final class PlayerEnergyManager {
     }
 
     private static boolean tryConsumeEnergy(ServerPlayer player, float amount) {
+        return tryConsumeEnergy(player, amount, false);
+    }
+
+    private static boolean tryConsumeEnergy(
+            ServerPlayer player,
+            float amount,
+            boolean instantVisual
+    ) {
+        if (amount <= 0.0f || !usesEnergy(player)) {
+            return true;
+        }
+
         PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
         if (energyData == null) {
             return true;
@@ -268,11 +319,11 @@ public final class PlayerEnergyManager {
                 applyFatigue(player);
                 forceStopFastMovement(player);
             }
-            syncEnergyToClient(player, energyData);
+            syncEnergyToClient(player, energyData, true, instantVisual);
             return false;
         }
 
-        consumeEnergy(player, amount);
+        consumeEnergy(player, amount, instantVisual);
         return true;
     }
 
@@ -312,9 +363,26 @@ public final class PlayerEnergyManager {
 
     @SubscribeEvent
     public static void onLivingAttack(LivingAttackEvent event) {
-        if (!MixEnergyConfig.ENERGY_COST_FOR_ATTACKS.get()
-                || !(event.getSource().getEntity() instanceof ServerPlayer player)
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || !usesEnergy(player)) {
+            return;
+        }
+
+        if (ModList.get().isLoaded("bettercombat")) {
+            BetterCombatAttackState attackState = BETTER_COMBAT_ATTACKS.get(player.getUUID());
+            if (attackState != null) {
+                long age = player.serverLevel().getGameTime() - attackState.gameTime();
+                if (age >= 0L && age <= BETTER_COMBAT_ATTACK_TIMEOUT_TICKS) {
+                    if (!attackState.allowed()) {
+                        event.setCanceled(true);
+                    }
+                    return;
+                }
+                BETTER_COMBAT_ATTACKS.remove(player.getUUID(), attackState);
+            }
+        }
+
+        if (!MixEnergyConfig.ENERGY_COST_FOR_ATTACKS.get()) {
             return;
         }
 
@@ -405,6 +473,7 @@ public final class PlayerEnergyManager {
             }
             SYNC_STATES.remove(event.getEntity().getUUID());
             CLIENT_FAST_SWIMMING.remove(event.getEntity().getUUID());
+            BETTER_COMBAT_ATTACKS.remove(event.getEntity().getUUID());
         } finally {
             original.invalidateCaps();
         }
@@ -436,12 +505,14 @@ public final class PlayerEnergyManager {
     public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         SYNC_STATES.remove(event.getEntity().getUUID());
         CLIENT_FAST_SWIMMING.remove(event.getEntity().getUUID());
+        BETTER_COMBAT_ATTACKS.remove(event.getEntity().getUUID());
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         SYNC_STATES.clear();
         CLIENT_FAST_SWIMMING.clear();
+        BETTER_COMBAT_ATTACKS.clear();
     }
 
     public static void syncEnergyToClient(ServerPlayer player, PlayerEnergyData energyData) {
@@ -452,6 +523,15 @@ public final class PlayerEnergyManager {
             ServerPlayer player,
             PlayerEnergyData energyData,
             boolean force
+    ) {
+        syncEnergyToClient(player, energyData, force, false);
+    }
+
+    private static void syncEnergyToClient(
+            ServerPlayer player,
+            PlayerEnergyData energyData,
+            boolean force,
+            boolean instantVisual
     ) {
         long gameTime = player.serverLevel().getGameTime();
         SyncState previous = SYNC_STATES.get(player.getUUID());
@@ -475,7 +555,8 @@ public final class PlayerEnergyManager {
                                 : 0.0f,
                         MixEnergyConfig.ENERGY_COST_FOR_SWIMMING.get()
                                 ? MixEnergyConfig.FAST_SWIMMING_ENERGY_COST.get().floatValue()
-                                : 0.0f
+                                : 0.0f,
+                        instantVisual
                 )
         );
         SYNC_STATES.put(
@@ -506,5 +587,8 @@ public final class PlayerEnergyManager {
     }
 
     private record SyncState(long gameTime, float energy, float maxEnergy) {
+    }
+
+    private record BetterCombatAttackState(long gameTime, boolean allowed) {
     }
 }

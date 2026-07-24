@@ -9,14 +9,16 @@ public final class ClientPacketHandler {
             float maxEnergy,
             float energyTrendPerTick,
             float sprintCostPerTick,
-            float swimmingCostPerTick
+            float swimmingCostPerTick,
+            boolean instantVisual
     ) {
         EnergyOverlayHandler.applyServerUpdate(
                 energy,
                 maxEnergy,
                 energyTrendPerTick,
                 sprintCostPerTick,
-                swimmingCostPerTick
+                swimmingCostPerTick,
+                instantVisual
         );
     }
 }

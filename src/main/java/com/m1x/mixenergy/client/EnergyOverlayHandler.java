@@ -95,7 +95,8 @@ public final class EnergyOverlayHandler {
             float maxValue,
             float energyTrendPerTick,
             float serverSprintCostPerTick,
-            float serverSwimmingCostPerTick
+            float serverSwimmingCostPerTick,
+            boolean instantVisual
     ) {
         setMaxEnergyValue(maxValue);
         float previous = energyValue;
@@ -112,9 +113,11 @@ public final class EnergyOverlayHandler {
             animating = true;
             animationStartTime = Util.getMillis();
         }
-        if (!hasServerSnapshot
+        if (instantVisual
+                || !hasServerSnapshot
                 || energyValue < PlayerEnergyManager.SPRINT_ENERGY_THRESHOLD) {
             displayedEnergyValue = energyValue;
+            visualUpdateTicker = 0;
         }
         hasServerSnapshot = true;
     }

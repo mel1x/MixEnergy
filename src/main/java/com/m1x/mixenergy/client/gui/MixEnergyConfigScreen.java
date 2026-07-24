@@ -43,6 +43,7 @@ public class MixEnergyConfigScreen extends Screen {
     private Tab activeTab = Tab.INTERFACE;
     private boolean remoteServer;
     private boolean combatRollLoaded;
+    private boolean betterCombatLoaded;
     private int panelX;
     private int panelWidth;
     private int contentTop;
@@ -67,6 +68,7 @@ public class MixEnergyConfigScreen extends Screen {
 
         remoteServer = minecraft.getConnection() != null && !minecraft.hasSingleplayerServer();
         combatRollLoaded = ModList.get().isLoaded("combatroll");
+        betterCombatLoaded = ModList.get().isLoaded("bettercombat");
         panelWidth = Math.min(PANEL_MAX_WIDTH, width - 24);
         panelX = (width - panelWidth) / 2;
         contentTop = 66;
@@ -194,6 +196,14 @@ public class MixEnergyConfigScreen extends Screen {
                     "mixenergy.config.source.combat_roll",
                     "mixenergy.config.source.combat_roll.description",
                     MixEnergyConfig.ENERGY_COST_FOR_COMBAT_ROLL
+            );
+        }
+        if (betterCombatLoaded) {
+            addSourceToggle(
+                    row++,
+                    "mixenergy.config.source.better_combat",
+                    "mixenergy.config.source.better_combat.description",
+                    MixEnergyConfig.ENERGY_COST_FOR_BETTER_COMBAT
             );
         }
 
