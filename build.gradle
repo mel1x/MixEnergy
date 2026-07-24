@@ -74,6 +74,9 @@ minecraft {
             // You can set various levels here.
             // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
             property 'forge.logging.console.level', 'debug'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile',
+                    "${project.layout.buildDirectory.get()}/createSrgToMcp/output.srg"
 
             mods {
                 "${mod_id}" {
@@ -122,6 +125,20 @@ repositories {
             includeGroup 'maven.modrinth'
         }
     }
+    maven {
+        name = 'KosmX'
+        url = 'https://maven.kosmx.dev/'
+        content {
+            includeGroup 'dev.kosmx.player-anim'
+        }
+    }
+    maven {
+        name = 'Shedaniel'
+        url = 'https://maven.shedaniel.me/'
+        content {
+            includeGroup 'me.shedaniel.cloth'
+        }
+    }
 
     // If you have mod jar dependencies in ./libs, you can declare them as a repository like so.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
@@ -137,7 +154,12 @@ dependencies {
     // If the group id is "net.minecraft" and the artifact id is one of ["client", "server", "joined"],
     // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-    compileOnly fg.deobf("maven.modrinth:combat-roll:1.3.3+1.20.1-forge")
+
+    // Combat Roll is optional for the published mod, but available in development
+    // so its integration can be launched and tested through runClient/runServer.
+    implementation fg.deobf("maven.modrinth:combat-roll:1.3.3+1.20.1-forge")
+    runtimeOnly fg.deobf("dev.kosmx.player-anim:player-animation-lib-forge:1.0.2-rc1+1.20")
+    runtimeOnly fg.deobf("me.shedaniel.cloth:cloth-config-forge:11.1.136")
 
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
