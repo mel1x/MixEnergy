@@ -255,7 +255,8 @@ public final class MixEnergyConfig {
     public enum EnergyBarSkin {
         DEFAULT("default", ""),
         AQUA("aqua", "aqua/"),
-        AMETHYST("amethyst", "amethyst/");
+        AMETHYST("amethyst", "amethyst/"),
+        EMERALD("emerald", "emerald/");
 
         private final String serializedName;
         private final String textureDirectory;

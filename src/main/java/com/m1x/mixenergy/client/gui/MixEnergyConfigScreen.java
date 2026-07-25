@@ -4,12 +4,22 @@ import com.m1x.mixenergy.MixEnergy;
 import com.m1x.mixenergy.client.EnergyOverlayHandler;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import net.minecraft.ChatFormatting;
+// Util moved from the root package into net.minecraft.util in 1.21.11.
+//? if <1.21.11 {
+import net.minecraft.Util;
+//?} else {
+/*import net.minecraft.util.Util;
+*///?}
 // GuiGraphics was renamed to GuiGraphicsExtractor in 26.2, when screen drawing became a
 // two-step extract-then-render pass.
 //? if <26 {
 import net.minecraft.client.gui.GuiGraphics;
 //?} else {
 /*import net.minecraft.client.gui.GuiGraphicsExtractor;
+*///?}
+// The mouse events carry a MouseButtonEvent instead of loose coordinates from 1.21.9.
+//? if >=1.21.9 {
+/*import net.minecraft.client.input.MouseButtonEvent;
 *///?}
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -31,6 +41,7 @@ import net.neoforged.neoforge.common.ModConfigSpec.BooleanValue;
 *///?}
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -45,6 +56,34 @@ public class MixEnergyConfigScreen extends Screen {
     private static final double MAX_CONSUMABLE_ENERGY_RESTORE = 30.0;
     /** Fill the bar preview is drawn at, so both the fill and its background are visible. */
     private static final float PREVIEW_FILL_RATIO = 0.6f;
+
+    // Interface tab layout, as offsets from contentTop. Both the widget placement in init
+    // and the drawing in render read these, so the two cannot drift apart.
+    private static final int POSITION_GRID_Y = 14;
+    private static final int POSITION_BUTTON_WIDTH = 56;
+    private static final int POSITION_BUTTON_HEIGHT = 22;
+    private static final int GRID_GAP = 4;
+    private static final int SKIN_LABEL_Y = 68;
+    private static final int SKIN_GRID_Y = 80;
+    private static final int SKIN_BUTTON_HEIGHT = 20;
+    private static final int PREVIEW_BOX_HEIGHT = 34;
+
+    /** Distance from the bottom of the screen to the bottom of the scrolling viewport. */
+    private static final int VIEWPORT_BOTTOM_MARGIN = 36;
+    private static final int SCROLLBAR_WIDTH = 4;
+    /** Pixels one notch of the wheel scrolls by. */
+    private static final int SCROLL_STEP = 20;
+    /**
+     * Time constant of the scroll easing. Driven off the wall clock once per frame rather
+     * than per tick, so the motion is equally smooth at any frame rate and a notch of the
+     * wheel lands in roughly 180 ms.
+     */
+    private static final float SCROLL_RESPONSE_MILLIS = 60.0f;
+    /** Below this the scroll is considered settled and is pinned to its target. */
+    private static final float SCROLL_SETTLE_EPSILON = 0.4f;
+    /** Longest frame the scroll is advanced by, so a stall does not make it jump. */
+    private static final long MAX_SCROLL_STEP_MILLIS = 250L;
+    private static final int MIN_THUMB_HEIGHT = 16;
     // Fully opaque: the panel used to let a sliver of the world (blurred, when the
     // "Menu Background Blurriness" option is on) show through its ~85% alpha, which
     // softened the edges of the text drawn on top of it.
@@ -63,6 +102,10 @@ public class MixEnergyConfigScreen extends Screen {
     private final Map<Button, BooleanValue> sourceButtons = new LinkedHashMap<>();
     private final Map<Button, PositionChoice> positionButtons = new LinkedHashMap<>();
     private final Map<Button, MixEnergyConfig.EnergyBarSkin> skinButtons = new LinkedHashMap<>();
+    /** The tabs and the footer: everything drawn outside the scrolling viewport. */
+    private final List<AbstractWidget> chromeWidgets = new ArrayList<>();
+    /** Where each content widget sits with the scroll at zero. */
+    private final Map<AbstractWidget, Integer> widgetBaseY = new HashMap<>();
 
     private Tab activeTab = Tab.INTERFACE;
     private boolean remoteServer;
@@ -71,6 +114,13 @@ public class MixEnergyConfigScreen extends Screen {
     private int panelX;
     private int panelWidth;
     private int contentTop;
+    private int viewportBottom;
+    private int gameplayContentHeight;
+    private double scrollOffset;
+    private double scrollTarget;
+    private int scrollPixels;
+    private long lastScrollUpdateTime = Util.getMillis();
+    private boolean draggingThumb;
     private Button interfaceTabButton;
     private Button gameplayTabButton;
     private Button resetButton;
@@ -91,6 +141,8 @@ public class MixEnergyConfigScreen extends Screen {
         sourceButtons.clear();
         positionButtons.clear();
         skinButtons.clear();
+        chromeWidgets.clear();
+        widgetBaseY.clear();
 
         remoteServer = minecraft.getConnection() != null && !minecraft.hasSingleplayerServer();
         combatRollLoaded = ModList.get().isLoaded("combatroll");
@@ -98,14 +150,18 @@ public class MixEnergyConfigScreen extends Screen {
         panelWidth = Math.min(PANEL_MAX_WIDTH, width - 24);
         panelX = (width - panelWidth) / 2;
         contentTop = 66;
+        // The tabs end above this and the footer starts below it, so the viewport never
+        // overlaps the chrome and a click outside it can only ever have been meant for one
+        // of the two.
+        viewportBottom = Math.max(contentTop, height - VIEWPORT_BOTTOM_MARGIN);
 
         int tabGap = 4;
         int tabWidth = (panelWidth - tabGap) / 2;
-        interfaceTabButton = addRenderableWidget(Button.builder(
+        interfaceTabButton = addChromeWidget(Button.builder(
                 Component.translatable("mixenergy.config.tab.interface"),
                 button -> setActiveTab(Tab.INTERFACE)
         ).bounds(panelX, 43, tabWidth, 20).build());
-        gameplayTabButton = addRenderableWidget(Button.builder(
+        gameplayTabButton = addChromeWidget(Button.builder(
                 Component.translatable("mixenergy.config.tab.energy_sources"),
                 button -> setActiveTab(Tab.GAMEPLAY)
         ).bounds(panelX + tabWidth + tabGap, 43, tabWidth, 20).build());
@@ -114,25 +170,43 @@ public class MixEnergyConfigScreen extends Screen {
         createGameplayWidgets();
 
         int footerY = height - 27;
-        resetButton = addRenderableWidget(Button.builder(
+        resetButton = addChromeWidget(Button.builder(
                 Component.translatable("controls.reset"),
                 button -> resetCurrentTab()
         ).bounds(width / 2 - 104, footerY, 100, 20).build());
-        addRenderableWidget(Button.builder(
+        addChromeWidget(Button.builder(
                 Component.translatable("gui.done"),
                 button -> onClose()
         ).bounds(width / 2 + 4, footerY, 100, 20).build());
 
+        // Resizing the window can shrink the content that is left to scroll through, and a
+        // scroll past its new end would leave the viewport showing empty panel.
+        setScroll(scrollOffset);
         updateTabState();
     }
 
+    private <T extends AbstractWidget> T addChromeWidget(T widget) {
+        chromeWidgets.add(addRenderableWidget(widget));
+        return widget;
+    }
+
+    /**
+     * Registers a widget that scrolls with its tab. The position it is built at is the one
+     * it has with the scroll at zero, and every later scroll is applied relative to it.
+     */
+    private <T extends AbstractWidget> T addContentWidget(List<AbstractWidget> tabWidgets, T widget) {
+        widgetBaseY.put(widget, widget.getY());
+        tabWidgets.add(addRenderableWidget(widget));
+        return widget;
+    }
+
     private void createInterfaceWidgets() {
-        int buttonWidth = 56;
-        int buttonHeight = 22;
-        int gap = 4;
-        int gridWidth = buttonWidth * 3 + gap * 2;
+        int buttonWidth = POSITION_BUTTON_WIDTH;
+        int buttonHeight = POSITION_BUTTON_HEIGHT;
+        int gap = GRID_GAP;
+        int gridWidth = gridWidth();
         int startX = width / 2 - gridWidth / 2;
-        int startY = contentTop + 14;
+        int startY = contentTop + POSITION_GRID_Y;
 
         addPositionButton(startX, startY, buttonWidth, buttonHeight, -1, -1,
                 MixEnergyConfig.EnergyBarPosition.TOP_LEFT);
@@ -150,25 +224,52 @@ public class MixEnergyConfigScreen extends Screen {
                 MixEnergyConfig.EnergyBarPosition.BOTTOM_RIGHT);
         updatePositionButtons();
 
-        // One button per skin on the row below the position grid, aligned to its columns.
+        // Two per row, spanning the same width as the position grid above. A single row
+        // would not leave each skin enough room for its name once there are four of them.
         MixEnergyConfig.EnergyBarSkin[] skins = MixEnergyConfig.EnergyBarSkin.values();
-        int skinY = startY + (buttonHeight + gap) * 2 + 2;
+        int skinWidth = (gridWidth - gap) / 2;
         for (int index = 0; index < skins.length; index++) {
             addSkinButton(
-                    startX + (buttonWidth + gap) * index,
-                    skinY,
-                    buttonWidth,
-                    20,
+                    startX + (index % 2) * (skinWidth + gap),
+                    contentTop + SKIN_GRID_Y + (index / 2) * (SKIN_BUTTON_HEIGHT + gap),
+                    skinWidth,
                     skins[index]
             );
         }
+    }
+
+    private int gridWidth() {
+        return POSITION_BUTTON_WIDTH * 3 + GRID_GAP * 2;
+    }
+
+    // Everything below the skin grid follows it, so adding a skin pushes the summary and
+    // the preview down instead of colliding with them.
+    private int skinGridRows() {
+        return (MixEnergyConfig.EnergyBarSkin.values().length + 1) / 2;
+    }
+
+    /** Offset from {@link #contentTop} of the first pixel below the skin grid. */
+    private int skinGridBottom() {
+        int rows = skinGridRows();
+        return SKIN_GRID_Y + rows * SKIN_BUTTON_HEIGHT + (rows - 1) * GRID_GAP;
+    }
+
+    private int selectionLabelY() {
+        return contentTop + skinGridBottom() + 4;
+    }
+
+    private int previewBoxY() {
+        return contentTop + skinGridBottom() + 16;
+    }
+
+    private int interfaceContentHeight() {
+        return skinGridBottom() + 16 + PREVIEW_BOX_HEIGHT + 4;
     }
 
     private void addSkinButton(
             int x,
             int y,
             int width,
-            int height,
             MixEnergyConfig.EnergyBarSkin skin
     ) {
         Button button = Button.builder(
@@ -177,10 +278,9 @@ public class MixEnergyConfigScreen extends Screen {
                     MixEnergyConfig.ENERGY_BAR_SKIN.set(skin);
                     MixEnergyConfig.saveClient();
                 }
-        ).bounds(x, y, width, height).build();
+        ).bounds(x, y, width, SKIN_BUTTON_HEIGHT).build();
         button.setTooltip(Tooltip.create(skinName(skin)));
-        interfaceWidgets.add(addRenderableWidget(button));
-        skinButtons.put(button, skin);
+        skinButtons.put(addContentWidget(interfaceWidgets, button), skin);
     }
 
     private void addPositionButton(
@@ -202,8 +302,7 @@ public class MixEnergyConfigScreen extends Screen {
                 }
         ).bounds(x, y, width, height).build();
         button.setTooltip(Tooltip.create(positionName(position)));
-        interfaceWidgets.add(addRenderableWidget(button));
-        positionButtons.put(button, choice);
+        positionButtons.put(addContentWidget(interfaceWidgets, button), choice);
     }
 
     private void updatePositionButtons() {
@@ -282,6 +381,8 @@ public class MixEnergyConfigScreen extends Screen {
                 "mixenergy.config.consumable_restore.description",
                 consumableRestoreSlider
         );
+
+        gameplayContentHeight = 10 + row * ROW_HEIGHT + 6;
     }
 
     private void addSlider(
@@ -293,7 +394,7 @@ public class MixEnergyConfigScreen extends Screen {
         gameplayDescriptionKeys.add(descriptionKey);
         slider.active = !remoteServer;
         slider.setTooltip(Tooltip.create(Component.translatable(descriptionKey)));
-        gameplayWidgets.add(addRenderableWidget(slider));
+        addContentWidget(gameplayWidgets, slider);
     }
 
     private void addSourceToggle(
@@ -320,10 +421,10 @@ public class MixEnergyConfigScreen extends Screen {
         toggle.setTooltip(Tooltip.create(Component.translatable(descriptionKey)));
         toggle.active = !remoteServer;
 
-        gameplayWidgets.add(addRenderableWidget(toggle));
-        sourceButtons.put(toggle, value);
+        sourceButtons.put(addContentWidget(gameplayWidgets, toggle), value);
     }
 
+    /** Row position with the scroll at zero; {@link #scrollPixels} is applied on top. */
     private int gameplayRowY(int row) {
         return contentTop + 10 + row * ROW_HEIGHT;
     }
@@ -352,6 +453,9 @@ public class MixEnergyConfigScreen extends Screen {
     private void setActiveTab(Tab tab) {
         if (activeTab != tab) {
             activeTab = tab;
+            // Each tab is a different length, so a scroll carried over from the other one
+            // would land somewhere arbitrary. Both start at the top.
+            setScroll(0.0);
             updateTabState();
         }
     }
@@ -361,14 +465,212 @@ public class MixEnergyConfigScreen extends Screen {
         interfaceTabButton.active = !showInterface;
         gameplayTabButton.active = showInterface;
 
-        interfaceWidgets.forEach(widget -> widget.visible = showInterface);
-        gameplayWidgets.forEach(widget -> widget.visible = !showInterface);
+        updateContentVisibility();
 
         resetButton.active = showInterface || !remoteServer;
         resetButton.setTooltip(remoteServer && !showInterface
                 ? Tooltip.create(Component.translatable("mixenergy.config.server.tooltip"))
                 : null);
     }
+
+    /**
+     * Hides the inactive tab, and any widget the scroll has moved clear of the viewport.
+     * A widget straddling an edge stays visible and is clipped when drawn; the mouse
+     * handlers below keep the part hanging outside from being clickable.
+     */
+    private void updateContentVisibility() {
+        boolean showInterface = activeTab == Tab.INTERFACE;
+        interfaceWidgets.forEach(widget ->
+                widget.visible = showInterface && intersectsViewport(widget));
+        gameplayWidgets.forEach(widget ->
+                widget.visible = !showInterface && intersectsViewport(widget));
+    }
+
+    private boolean intersectsViewport(AbstractWidget widget) {
+        return widget.getY() + widget.getHeight() > contentTop && widget.getY() < viewportBottom;
+    }
+
+    private int viewportHeight() {
+        return viewportBottom - contentTop;
+    }
+
+    private int contentHeight() {
+        return activeTab == Tab.INTERFACE ? interfaceContentHeight() : gameplayContentHeight;
+    }
+
+    private int maxScroll() {
+        return Math.max(0, contentHeight() - viewportHeight());
+    }
+
+    /** Jumps straight to an offset, with no easing; used when the thumb is dragged. */
+    private void setScroll(double offset) {
+        scrollTarget = Mth.clamp(offset, 0.0, maxScroll());
+        scrollOffset = scrollTarget;
+        applyScroll();
+    }
+
+    private boolean scrollByNotches(double notches) {
+        if (maxScroll() <= 0) {
+            return false;
+        }
+        scrollTarget = Mth.clamp(scrollTarget - notches * SCROLL_STEP, 0.0, maxScroll());
+        return true;
+    }
+
+    /**
+     * Eases the drawn offset towards the one the wheel asked for. Runs per frame off the
+     * wall clock, so the scroll takes the same time to arrive at any frame rate.
+     */
+    private void advanceScroll() {
+        long now = Util.getMillis();
+        long elapsed = Math.min(MAX_SCROLL_STEP_MILLIS, Math.max(0L, now - lastScrollUpdateTime));
+        lastScrollUpdateTime = now;
+
+        scrollTarget = Mth.clamp(scrollTarget, 0.0, maxScroll());
+        double difference = scrollTarget - scrollOffset;
+        if (Math.abs(difference) <= SCROLL_SETTLE_EPSILON) {
+            scrollOffset = scrollTarget;
+        } else if (elapsed > 0L) {
+            scrollOffset += difference * (1.0 - Math.exp(-elapsed / SCROLL_RESPONSE_MILLIS));
+        }
+        applyScroll();
+    }
+
+    private void applyScroll() {
+        scrollPixels = (int) Math.round(scrollOffset);
+        widgetBaseY.forEach((widget, baseY) -> widget.setY(baseY - scrollPixels));
+        updateContentVisibility();
+    }
+
+    private int scrollbarX() {
+        return panelX + panelWidth + 2;
+    }
+
+    private int thumbHeight() {
+        int viewportHeight = viewportHeight();
+        return Mth.clamp(
+                viewportHeight * viewportHeight / Math.max(1, contentHeight()),
+                MIN_THUMB_HEIGHT,
+                viewportHeight
+        );
+    }
+
+    private boolean isOverScrollbar(double mouseX, double mouseY) {
+        return maxScroll() > 0
+                && mouseX >= scrollbarX()
+                && mouseX < scrollbarX() + SCROLLBAR_WIDTH
+                && mouseY >= contentTop
+                && mouseY < viewportBottom;
+    }
+
+    /** Centres the thumb on the cursor, so a click anywhere on the track jumps there. */
+    private void scrollToThumb(double mouseY) {
+        int travel = viewportHeight() - thumbHeight();
+        if (travel <= 0) {
+            setScroll(0.0);
+            return;
+        }
+        setScroll((mouseY - contentTop - thumbHeight() / 2.0) / travel * maxScroll());
+    }
+
+    private boolean isInsideViewport(double mouseY) {
+        return mouseY >= contentTop && mouseY < viewportBottom;
+    }
+
+    // The wheel gained a horizontal axis in 1.20.2, and the click, drag and release events
+    // were folded into a MouseButtonEvent in 1.21.9. Each override below only unpacks its
+    // arguments; the behaviour lives in the shared helpers.
+    //? if <1.20.2 {
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+        return scrollByNotches(delta) || super.mouseScrolled(mouseX, mouseY, delta);
+    }
+    //?} else {
+    /*@Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        return scrollByNotches(scrollY) || super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+    *///?}
+
+    //? if <1.21.9 {
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (isOverScrollbar(mouseX, mouseY)) {
+            draggingThumb = true;
+            scrollToThumb(mouseY);
+            return true;
+        }
+        if (isInsideViewport(mouseY)) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        // Outside the viewport a content widget can only be one the scroll has pushed
+        // halfway past an edge, and the half hanging out must not be clickable. The chrome
+        // is the only thing that legitimately lives up here, so offer the click to it alone.
+        for (AbstractWidget widget : chromeWidgets) {
+            if (widget.mouseClicked(mouseX, mouseY, button)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseDragged(
+            double mouseX,
+            double mouseY,
+            int button,
+            double dragX,
+            double dragY
+    ) {
+        if (draggingThumb) {
+            scrollToThumb(mouseY);
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        draggingThumb = false;
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+    //?} else {
+    /*@Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (isOverScrollbar(event.x(), event.y())) {
+            draggingThumb = true;
+            scrollToThumb(event.y());
+            return true;
+        }
+        if (isInsideViewport(event.y())) {
+            return super.mouseClicked(event, doubleClick);
+        }
+        // Outside the viewport a content widget can only be one the scroll has pushed
+        // halfway past an edge, and the half hanging out must not be clickable. The chrome
+        // is the only thing that legitimately lives up here, so offer the click to it alone.
+        for (AbstractWidget widget : chromeWidgets) {
+            if (widget.mouseClicked(event, doubleClick)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (draggingThumb) {
+            scrollToThumb(event.y());
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        draggingThumb = false;
+        return super.mouseReleased(event);
+    }
+    *///?}
 
     private void resetCurrentTab() {
         if (activeTab == Tab.INTERFACE) {
@@ -448,37 +750,94 @@ public class MixEnergyConfigScreen extends Screen {
                 COLOR_SECONDARY_TEXT
         );
 
+        advanceScroll();
+
+        // Everything between the tabs and the footer is clipped to the viewport, so content
+        // scrolled past either edge is cut off at the edge instead of being drawn over the
+        // title or the footer.
+        graphics.enableScissor(
+                panelX - 6,
+                contentTop,
+                panelX + panelWidth + 6,
+                viewportBottom
+        );
         if (activeTab == Tab.INTERFACE) {
             renderInterfaceTab(graphics);
         } else {
             renderGameplayTab(graphics);
         }
-
-        graphics.fill(panelX, height - 32, panelX + panelWidth, height - 31, COLOR_BORDER);
-
-        // Draw the widgets by walking the list directly instead of calling super. On
+        // Draw the widgets by walking the lists directly instead of calling super. On
         // Minecraft 1.20.2 - 1.21.5, Screen#render paints the background itself before
         // iterating the widgets, so calling super here would re-run the background - and
         // with it the "Menu Background Blurriness" shader - *after* the panel and text
         // above were already drawn, blurring them while leaving the widgets that follow
-        // sharp. This loop is exactly what Screen#render does minus that background call,
-        // and it behaves identically on every supported version.
-        //? if <26 {
-        for (Renderable renderable : renderables) {
-            renderable.render(graphics, mouseX, mouseY, partialTick);
-        }
-        //?} else {
-        /*for (Renderable renderable : renderables) {
-            renderable.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        }
-        *///?}
-
+        // sharp. Splitting the walk in two also keeps the scissor off the chrome, which
+        // must stay visible whatever the content is doing.
+        renderWidgets(graphics, activeContentWidgets(), mouseX, mouseY, partialTick);
+        // After the widgets, so the selection marks land on top of the buttons they mark.
         if (activeTab == Tab.INTERFACE) {
             renderPositionArrows(graphics);
             renderSkinSelection(graphics);
-        } else {
+        }
+        graphics.disableScissor();
+
+        renderScrollbar(graphics);
+        graphics.fill(panelX, height - 32, panelX + panelWidth, height - 31, COLOR_BORDER);
+        renderWidgets(graphics, chromeWidgets, mouseX, mouseY, partialTick);
+
+        if (activeTab == Tab.GAMEPLAY) {
             renderGameplayTooltip(graphics, mouseX, mouseY);
         }
+    }
+
+    private List<AbstractWidget> activeContentWidgets() {
+        return activeTab == Tab.INTERFACE ? interfaceWidgets : gameplayWidgets;
+    }
+
+    //? if <26 {
+    private void renderWidgets(
+            GuiGraphics graphics,
+            List<AbstractWidget> widgets,
+            int mouseX,
+            int mouseY,
+            float partialTick
+    ) {
+        for (Renderable renderable : widgets) {
+            renderable.render(graphics, mouseX, mouseY, partialTick);
+        }
+    }
+    //?} else {
+    /*private void renderWidgets(
+            GuiGraphicsExtractor graphics,
+            List<AbstractWidget> widgets,
+            int mouseX,
+            int mouseY,
+            float partialTick
+    ) {
+        for (Renderable renderable : widgets) {
+            renderable.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        }
+    }
+    *///?}
+
+    //? if <26 {
+    private void renderScrollbar(GuiGraphics graphics) {
+    //?} else {
+    /*private void renderScrollbar(GuiGraphicsExtractor graphics) {
+    *///?}
+        int maxScroll = maxScroll();
+        if (maxScroll <= 0) {
+            return;
+        }
+
+        int trackX = scrollbarX();
+        int thumbHeight = thumbHeight();
+        int travel = viewportHeight() - thumbHeight;
+        int thumbY = contentTop
+                + (int) Math.round(travel * Mth.clamp(scrollOffset / maxScroll, 0.0, 1.0));
+
+        graphics.fill(trackX, contentTop, trackX + SCROLLBAR_WIDTH, viewportBottom, 0x66000000);
+        graphics.fill(trackX, thumbY, trackX + SCROLLBAR_WIDTH, thumbY + thumbHeight, COLOR_ACCENT);
     }
 
     //? if <26 {
@@ -534,7 +893,14 @@ public class MixEnergyConfigScreen extends Screen {
                 graphics,
                 font.plainSubstrByWidth(description.getString(), panelWidth - 24),
                 width / 2,
-                contentTop + 2,
+                contentTop + 2 - scrollPixels,
+                COLOR_SECONDARY_TEXT
+        );
+        centeredText(
+                graphics,
+                Component.translatable("mixenergy.config.skin"),
+                width / 2,
+                contentTop + SKIN_LABEL_Y - scrollPixels,
                 COLOR_SECONDARY_TEXT
         );
 
@@ -545,7 +911,7 @@ public class MixEnergyConfigScreen extends Screen {
                 graphics,
                 font.plainSubstrByWidth(selection, panelWidth - 24),
                 width / 2,
-                contentTop + 92,
+                selectionLabelY() - scrollPixels,
                 COLOR_ACCENT
         );
         renderPositionPreview(graphics);
@@ -562,9 +928,9 @@ public class MixEnergyConfigScreen extends Screen {
                 EnergyOverlayHandler.PREVIEW_WIDTH + 16,
                 Math.min(190, panelWidth - 32)
         );
-        int previewHeight = 34;
+        int previewHeight = PREVIEW_BOX_HEIGHT;
         int previewX = width / 2 - previewWidth / 2;
-        int previewY = contentTop + 102;
+        int previewY = previewBoxY() - scrollPixels;
         int previewRight = previewX + previewWidth;
         int previewBottom = previewY + previewHeight;
 
@@ -747,14 +1113,14 @@ public class MixEnergyConfigScreen extends Screen {
                 graphics,
                 font.plainSubstrByWidth(sectionDescription.getString(), panelWidth - 16),
                 panelX + 8,
-                contentTop,
+                contentTop - scrollPixels,
                 remoteServer ? 0xFFE0BD72 : COLOR_SECONDARY_TEXT,
                 false
         );
 
         int labelMaxWidth = panelWidth - 128;
         for (int row = 0; row < gameplayLabelKeys.size(); row++) {
-            int y = gameplayRowY(row);
+            int y = gameplayRowY(row) - scrollPixels;
             graphics.fill(
                     panelX,
                     y,
@@ -786,11 +1152,12 @@ public class MixEnergyConfigScreen extends Screen {
             int mouseY
     ) {
     *///?}
-        if (mouseX < panelX || mouseX >= panelX + panelWidth - 100) {
+        if (mouseX < panelX || mouseX >= panelX + panelWidth - 100
+                || !isInsideViewport(mouseY)) {
             return;
         }
 
-        int firstRowY = gameplayRowY(0);
+        int firstRowY = gameplayRowY(0) - scrollPixels;
         int row = (mouseY - firstRowY) / ROW_HEIGHT;
         if (mouseY < firstRowY || row < 0 || row >= gameplayDescriptionKeys.size()) {
             return;
