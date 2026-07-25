@@ -89,8 +89,7 @@ energyBarSkin = "DEFAULT"
 
 Available positions are `ABOVE_HOTBAR`, `TOP_LEFT`, `TOP_RIGHT`, `TOP_CENTER`,
 `BOTTOM_LEFT`, and `BOTTOM_RIGHT`. Available skins are `DEFAULT`, `AQUA` and
-`AMETHYST`; `tools/generate_bar_skins.py` regenerates the two derived texture
-sets from the hand-drawn default one.
+`AMETHYST`;
 
 
 ## Gameplay Impact
