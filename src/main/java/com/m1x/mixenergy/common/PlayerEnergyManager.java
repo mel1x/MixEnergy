@@ -63,11 +63,19 @@ public final class PlayerEnergyManager {
     private static final long REGEN_INTERVAL_TICKS = 3L;
     private static final long MAX_REGEN_BOOST_TIME_TICKS = 60L;
     private static final long BETTER_COMBAT_ATTACK_TIMEOUT_TICKS = 60L;
+    /**
+     * How long a reported sprint is acted on without being refreshed. The client repeats
+     * the report every ten ticks, so this only decides how quickly a player stops being
+     * charged if those reports stop arriving.
+     */
+    private static final long CLIENT_SPRINT_TIMEOUT_TICKS = 20L;
 
     private static final Map<UUID, SyncState> SYNC_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, BetterCombatAttackState> BETTER_COMBAT_ATTACKS =
             new ConcurrentHashMap<>();
     private static final Set<UUID> CLIENT_FAST_SWIMMING = ConcurrentHashMap.newKeySet();
+    /** Game time each reported sprint stops counting at, by player. */
+    private static final Map<UUID, Long> CLIENT_SPRINTING = new ConcurrentHashMap<>();
 
     private PlayerEnergyManager() {
     }
@@ -130,12 +138,34 @@ public final class PlayerEnergyManager {
                     ? MixEnergyConfig.FAST_SWIMMING_ENERGY_COST.get().floatValue()
                     : 0.0f;
         }
-        if (player.isSprinting()) {
+        if (isSprinting(player)) {
             return MixEnergyConfig.ENERGY_COST_FOR_SPRINTING.get()
                     ? MixEnergyConfig.SPRINT_ENERGY_COST.get().floatValue()
                     : 0.0f;
         }
         return 0.0f;
+    }
+
+    /**
+     * Whether the player is sprinting for energy purposes. The vanilla flag alone is not
+     * enough: the client only reports a sprint when it notices the flag change, and a
+     * sprint this mod cancels on the client is one of the changes it does not notice, so a
+     * resumed sprint can otherwise stay invisible here for as long as the key is held.
+     */
+    private static boolean isSprinting(ServerPlayer player) {
+        if (player.isSprinting()) {
+            return true;
+        }
+
+        Long reportedUntil = CLIENT_SPRINTING.get(player.getUUID());
+        if (reportedUntil == null) {
+            return false;
+        }
+        if (player.level().getGameTime() > reportedUntil) {
+            CLIENT_SPRINTING.remove(player.getUUID(), reportedUntil);
+            return false;
+        }
+        return true;
     }
 
     private static boolean isFastSwimming(Player player) {
@@ -164,7 +194,12 @@ public final class PlayerEnergyManager {
 
         boolean clientReportedFastSwimming =
                 CLIENT_FAST_SWIMMING.remove(player.getUUID());
-        if (player.isSprinting() || player.isSwimming() || clientReportedFastSwimming) {
+        boolean clientReportedSprinting =
+                CLIENT_SPRINTING.remove(player.getUUID()) != null;
+        if (player.isSprinting()
+                || player.isSwimming()
+                || clientReportedFastSwimming
+                || clientReportedSprinting) {
             forceStopFastMovement(player);
             return true;
         }
@@ -224,6 +259,7 @@ public final class PlayerEnergyManager {
 
     private static void forceStopFastMovement(ServerPlayer player) {
         CLIENT_FAST_SWIMMING.remove(player.getUUID());
+        CLIENT_SPRINTING.remove(player.getUUID());
         player.setSprinting(false);
         player.setSwimming(false);
         NetworkHandler.sendToPlayer(
@@ -242,6 +278,20 @@ public final class PlayerEnergyManager {
             return;
         }
         CLIENT_FAST_SWIMMING.add(player.getUUID());
+    }
+
+    public static void setClientSprinting(ServerPlayer player, boolean sprinting) {
+        if (!sprinting
+                || !usesEnergy(player)
+                || MixEnergyEffects.isFatigued(player)
+                || !hasEnoughEnergyForFastMovement(player)) {
+            CLIENT_SPRINTING.remove(player.getUUID());
+            return;
+        }
+        CLIENT_SPRINTING.put(
+                player.getUUID(),
+                player.level().getGameTime() + CLIENT_SPRINT_TIMEOUT_TICKS
+        );
     }
 
     private static boolean hasEnoughEnergyForFastMovement(ServerPlayer player) {
@@ -521,6 +571,7 @@ public final class PlayerEnergyManager {
             }
             SYNC_STATES.remove(event.getEntity().getUUID());
             CLIENT_FAST_SWIMMING.remove(event.getEntity().getUUID());
+            CLIENT_SPRINTING.remove(event.getEntity().getUUID());
             BETTER_COMBAT_ATTACKS.remove(event.getEntity().getUUID());
         } finally {
             //? if forge {
@@ -557,6 +608,7 @@ public final class PlayerEnergyManager {
     public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         SYNC_STATES.remove(event.getEntity().getUUID());
         CLIENT_FAST_SWIMMING.remove(event.getEntity().getUUID());
+        CLIENT_SPRINTING.remove(event.getEntity().getUUID());
         BETTER_COMBAT_ATTACKS.remove(event.getEntity().getUUID());
     }
 
@@ -564,6 +616,7 @@ public final class PlayerEnergyManager {
     public static void onServerStopped(ServerStoppedEvent event) {
         SYNC_STATES.clear();
         CLIENT_FAST_SWIMMING.clear();
+        CLIENT_SPRINTING.clear();
         BETTER_COMBAT_ATTACKS.clear();
     }
 

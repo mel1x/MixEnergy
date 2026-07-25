@@ -40,7 +40,9 @@ public class EnergyActionPacket {
         STOP_SWIMMING,
         FAST_SWIMMING_START,
         FAST_SWIMMING_STOP,
-        BETTER_COMBAT_ATTACK_START
+        BETTER_COMBAT_ATTACK_START,
+        SPRINT_START,
+        SPRINT_STOP
     }
 
     public EnergyActionPacket(ActionType actionType) {
@@ -131,6 +133,10 @@ public class EnergyActionPacket {
                     PlayerEnergyManager.setClientFastSwimming(sender, true);
             case FAST_SWIMMING_STOP ->
                     PlayerEnergyManager.setClientFastSwimming(sender, false);
+            case SPRINT_START ->
+                    PlayerEnergyManager.setClientSprinting(sender, true);
+            case SPRINT_STOP ->
+                    PlayerEnergyManager.setClientSprinting(sender, false);
             case BETTER_COMBAT_ATTACK_START ->
                     PlayerEnergyManager.beginBetterCombatAttack(sender);
             case STOP_SWIMMING -> {

@@ -39,7 +39,9 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  * expose the same {@link #sendToPlayer} / {@link #sendToServer} pair to the rest of the mod.
  */
 public final class NetworkHandler {
-    private static final String PROTOCOL_VERSION = "5";
+    // 6 added the sprint reports to EnergyActionPacket.ActionType. The enum travels as an
+    // ordinal, so a client and a server that disagree about its contents must not connect.
+    private static final String PROTOCOL_VERSION = "6";
 
     //? if forge {
     //? if <1.20.2 {

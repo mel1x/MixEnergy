@@ -121,6 +121,15 @@ public final class EnergyOverlayHandler {
     private static final float VISUAL_SETTLE_EPSILON = 0.01f;
     /** Longest frame the bar is advanced by, so a stall does not make it jump. */
     private static final long MAX_VISUAL_STEP_MILLIS = 250L;
+    /**
+     * How long the client keeps predicting a moving value on its own without the server
+     * confirming it. A value the server is changing is pushed at least every other tick,
+     * so anything past a second of silence means the two disagree about whether energy is
+     * being spent at all - most likely because the server does not consider the player to
+     * be sprinting. The bar then stops running away from the last known value and waits,
+     * instead of draining to empty and snapping back to full on the next real update.
+     */
+    private static final int PREDICTION_GRACE_TICKS = 20;
 
     private static float energyValue = 27.0f;
     private static float displayedEnergyValue = 27.0f;
@@ -136,6 +145,7 @@ public final class EnergyOverlayHandler {
     private static long animationStartTime;
     private static boolean animating;
     private static boolean hasServerSnapshot;
+    private static int unconfirmedPredictionTicks;
 
     static {
         for (int i = 0; i < CENTER_ANIMATION.length; i++) {
@@ -179,6 +189,7 @@ public final class EnergyOverlayHandler {
         energyValue = Mth.clamp(value, 0.0f, maxEnergyValue);
         projectedEnergyValue = energyValue;
         serverEnergyTrendPerTick = energyTrendPerTick;
+        unconfirmedPredictionTicks = 0;
         sprintCostPerTick = Math.max(0.0f, serverSprintCostPerTick);
         swimmingCostPerTick = Math.max(0.0f, serverSwimmingCostPerTick);
 
@@ -201,6 +212,7 @@ public final class EnergyOverlayHandler {
         maxEnergyValue = Math.max(1.0f, value);
         energyValue = Math.min(energyValue, maxEnergyValue);
         displayedEnergyValue = Math.min(displayedEnergyValue, maxEnergyValue);
+        projectedEnergyValue = Math.min(projectedEnergyValue, maxEnergyValue);
     }
 
     //? if forge {
@@ -223,8 +235,31 @@ public final class EnergyOverlayHandler {
      * the bar keeps moving between server updates instead of waiting for the next packet.
      */
     private static void tick() {
+        if (Minecraft.getInstance().player == null) {
+            // Leaving a world keeps the last world's values in these fields, so drop the
+            // snapshot and let the next server update be adopted as-is.
+            hasServerSnapshot = false;
+            animating = false;
+            unconfirmedPredictionTicks = 0;
+            return;
+        }
+
+        float trend = getClientEnergyTrend();
+        if (trend == 0.0f) {
+            unconfirmedPredictionTicks = 0;
+            return;
+        }
+        if (unconfirmedPredictionTicks >= PREDICTION_GRACE_TICKS) {
+            // Nothing has confirmed this prediction for a second. Fall back on the last
+            // value the server actually sent rather than leaving the bar parked at one the
+            // client invented and has no way of correcting.
+            projectedEnergyValue = energyValue;
+            return;
+        }
+
+        unconfirmedPredictionTicks++;
         projectedEnergyValue = Mth.clamp(
-                projectedEnergyValue + getClientEnergyTrend(),
+                projectedEnergyValue + trend,
                 0.0f,
                 maxEnergyValue
         );
@@ -253,11 +288,20 @@ public final class EnergyOverlayHandler {
         // the bar takes the same wall-clock time to catch up at any frame rate: about 94%
         // of the gap within 200 ms, and the rest lands shortly after.
         float closedFraction = 1.0f - (float) Math.exp(-elapsed / VISUAL_RESPONSE_MILLIS);
+        float previous = displayedEnergyValue;
         displayedEnergyValue = Mth.approach(
                 displayedEnergyValue,
                 projectedEnergyValue,
                 Math.abs(difference) * closedFraction
         );
+
+        // A bar that is still visibly moving counts as a change, so the fade waits for the
+        // motion to finish. The server only reports whole changes of its own value, and
+        // predicted drain between two of those reports would otherwise let the bar fade
+        // out while it is still sliding.
+        if (Math.abs(displayedEnergyValue - previous) > VISUAL_SETTLE_EPSILON) {
+            lastEnergyChangeTime = now;
+        }
     }
 
     private static float getClientEnergyTrend() {
@@ -271,8 +315,19 @@ public final class EnergyOverlayHandler {
         if (gameMode != GameType.SURVIVAL && gameMode != GameType.ADVENTURE) {
             return 0.0f;
         }
-        if (MixEnergyEffects.isFatigued(player)) {
+        // The same two conditions under which ClientMovementHandler stops fast movement:
+        // while either holds the server charges nothing, so neither may the prediction.
+        if (MixEnergyEffects.isFatigued(player)
+                || energyValue < PlayerEnergyManager.SPRINT_ENERGY_THRESHOLD) {
             return Math.max(0.0f, serverEnergyTrendPerTick);
+        }
+        // A drain is only ever predicted while the server's own last word was that it is
+        // charging for one. Predicting it from the local sprint flag alone is what let the
+        // bar drain against a server that had stopped the sprint on its side: the value
+        // never moved there, so no update came to correct the bar either, and it emptied
+        // and faded out while the server still held a full one.
+        if (serverEnergyTrendPerTick >= 0.0f) {
+            return serverEnergyTrendPerTick;
         }
         if (player.isInWater() && (player.isSwimming() || player.isSprinting())) {
             return -swimmingCostPerTick;
@@ -280,7 +335,9 @@ public final class EnergyOverlayHandler {
         if (player.isSprinting()) {
             return -sprintCostPerTick;
         }
-        return Math.max(0.0f, serverEnergyTrendPerTick);
+        // Still charged for a movement the player has just stopped; the update that says so
+        // is a tick or two out, and until then the bar holds instead of draining.
+        return 0.0f;
     }
 
     // Forge 1.20.1 draws overlays through a named vanilla overlay fired every frame on the
@@ -456,7 +513,9 @@ public final class EnergyOverlayHandler {
         int leftInnerX = startX + FRAME_WIDTH;
         int centerX = leftInnerX + halfWidth;
         int rightInnerX = centerX + CENTER_WIDTH;
-        boolean fullEnergy = energyValue >= maxEnergyValue - 0.001f;
+        // Matched against the drawn value, not the last one the server sent, so the frames
+        // never claim a full bar while the fill is still draining towards the prediction.
+        boolean fullEnergy = displayedEnergyValue >= maxEnergyValue - 0.001f;
         var leftFrame = fullEnergy ? LEFT_FRAME_FULL : LEFT_FRAME;
         var rightFrame = fullEnergy ? RIGHT_FRAME_FULL : RIGHT_FRAME;
 
