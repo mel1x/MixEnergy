@@ -60,8 +60,10 @@ public final class MixEnergyConfig {
     public static final DoubleValue BASE_ENERGY_REGEN_RATE;
     public static final DoubleValue MAX_ENERGY_REGEN_RATE;
     public static final DoubleValue ENERGY_REGEN_SPEED_MULTIPLIER;
+    public static final DoubleValue CONSUMABLE_ENERGY_RESTORE;
 
     public static final EnumValue<EnergyBarPosition> ENERGY_BAR_POSITION;
+    public static final EnumValue<EnergyBarSkin> ENERGY_BAR_SKIN;
 
     static {
         Builder commonBuilder = new Builder();
@@ -175,6 +177,11 @@ public final class MixEnergyConfig {
                 .comment("Set to 0 to disable passive regeneration.")
                 .defineInRange("speedMultiplier", 1.0, 0.0, 5.0);
 
+        CONSUMABLE_ENERGY_RESTORE = commonBuilder
+                .comment("Energy restored when a food item, potion or other drink is consumed.")
+                .comment("Set to 0 to disable energy restoration from consumables.")
+                .defineInRange("consumableRestore", 8.0, 0.0, 1000.0);
+
         commonBuilder.pop();
         COMMON_SPEC = commonBuilder.build();
 
@@ -186,6 +193,10 @@ public final class MixEnergyConfig {
         ENERGY_BAR_POSITION = clientBuilder
                 .comment("Position of the energy bar on screen.")
                 .defineEnum("energyBarPosition", EnergyBarPosition.ABOVE_HOTBAR);
+
+        ENERGY_BAR_SKIN = clientBuilder
+                .comment("Texture set the energy bar is drawn with.")
+                .defineEnum("energyBarSkin", EnergyBarSkin.DEFAULT);
 
         clientBuilder.pop();
         CLIENT_SPEC = clientBuilder.build();
@@ -233,6 +244,33 @@ public final class MixEnergyConfig {
 
         public String getName() {
             return serializedName;
+        }
+    }
+
+    /**
+     * Texture sets the energy bar can be drawn with. Every skin ships the same file names
+     * with the same pixel geometry, so the renderer only swaps the directory it loads them
+     * from; {@link #DEFAULT} is the set that lives directly in {@code gui/energy_bar}.
+     */
+    public enum EnergyBarSkin {
+        DEFAULT("default", ""),
+        AQUA("aqua", "aqua/"),
+        AMETHYST("amethyst", "amethyst/");
+
+        private final String serializedName;
+        private final String textureDirectory;
+
+        EnergyBarSkin(String serializedName, String textureDirectory) {
+            this.serializedName = serializedName;
+            this.textureDirectory = textureDirectory;
+        }
+
+        public String getName() {
+            return serializedName;
+        }
+
+        public String getTextureDirectory() {
+            return textureDirectory;
         }
     }
 }

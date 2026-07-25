@@ -9,11 +9,13 @@ import com.m1x.mixenergy.network.NetworkHandler;
 import com.m1x.mixenergy.registry.MixEnergyEffects;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 //? if forge {
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
@@ -27,6 +29,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -508,6 +511,37 @@ public final class PlayerEnergyManager {
             player.setDeltaMovement(movement.x, Math.min(0.0, movement.y), movement.z);
             player.hurtMarked = true;
         }
+    }
+
+    /**
+     * Restores energy once a consumable has been finished. This fires after the item has
+     * applied its own effects, so a meal that is interrupted part way through restores
+     * nothing, matching how it feeds the player nothing either.
+     */
+    @SubscribeEvent
+    public static void onUseItemFinish(LivingEntityUseItemEvent.Finish event) {
+        float restored = MixEnergyConfig.CONSUMABLE_ENERGY_RESTORE.get().floatValue();
+        if (restored <= 0.0f
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || !usesEnergy(player)
+                || !isEatenOrDrunk(event.getItem())) {
+            return;
+        }
+
+        regenerateEnergy(player, restored);
+    }
+
+    /**
+     * Whether finishing this item counts as eating or drinking, which is what decides
+     * whether it restores energy. Matched against the animation the item is used with
+     * rather than its food data, so anything a mod adds that the player visibly eats or
+     * drinks counts too. The enum holding it was renamed from {@code UseAnim} to
+     * {@code ItemUseAnimation} in 1.21.2 while its constants stayed the same, so the
+     * comparison is by name and this stays a single call site across every version.
+     */
+    private static boolean isEatenOrDrunk(ItemStack stack) {
+        String animation = stack.getUseAnimation().name();
+        return "EAT".equals(animation) || "DRINK".equals(animation);
     }
 
     @SubscribeEvent

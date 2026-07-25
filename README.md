@@ -19,6 +19,12 @@ See [BUILDING.md](BUILDING.md) for the full target list and the multi-version bu
 
   If the player runs out of energy, these actions will be temporarily **disabled** until energy is restored.
 
+- **Food and Drink Restore Energy**: Finishing any food, potion or drink restores energy.
+  The amount is configurable, and setting it to `0` turns the mechanic off.
+
+- **Energy Bar Skins**: The HUD bar ships in three looks — **Classic**, **Aqua** and
+  **Amethyst** — picked in the mod's interface settings, which preview the bar itself.
+
 - **Energy Commands**:
   - `/setEnergy <value> <player:optional>`: Set a specific player's energy level. If no player is specified, it defaults to the executing player.
   - `/setMaxEnergy <value> <player:optional>`: Adjust the maximum energy limit for a player. Similar to `/setEnergy`, the command defaults to the executing player if no target is provided.
@@ -33,12 +39,12 @@ MixEnergy creates two files in the Minecraft or dedicated-server `config` direct
 
 - `mixenergy-common.toml` contains authoritative gameplay rules. On a dedicated
   server, edit this file on the server.
-- `mixenergy-client.toml` contains the local HUD position.
+- `mixenergy-client.toml` contains the local HUD position and skin.
 
 In single-player, every energy source can also be changed from the mod settings
 screen. Changes are applied and saved immediately. During multiplayer, gameplay
-toggles are shown as server-controlled while the local HUD position remains
-editable.
+toggles are shown as server-controlled while the local HUD position and skin
+remain editable.
 
 ### Example
 
@@ -70,17 +76,21 @@ jump = 1.0
 baseRate = 1.0
 maxRate = 1.8
 speedMultiplier = 1.0 # 0 disables passive regeneration
+consumableRestore = 8.0 # Restored per food/potion/drink; 0 disables it
 ```
 
-The HUD position is stored separately:
+The HUD preferences are stored separately:
 
 ```toml
 [hud]
 energyBarPosition = "ABOVE_HOTBAR"
+energyBarSkin = "DEFAULT"
 ```
 
 Available positions are `ABOVE_HOTBAR`, `TOP_LEFT`, `TOP_RIGHT`, `TOP_CENTER`,
-`BOTTOM_LEFT`, and `BOTTOM_RIGHT`.
+`BOTTOM_LEFT`, and `BOTTOM_RIGHT`. Available skins are `DEFAULT`, `AQUA` and
+`AMETHYST`; `tools/generate_bar_skins.py` regenerates the two derived texture
+sets from the hand-drawn default one.
 
 
 ## Gameplay Impact

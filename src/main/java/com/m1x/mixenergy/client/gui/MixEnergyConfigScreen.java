@@ -1,6 +1,7 @@
 package com.m1x.mixenergy.client.gui;
 
 import com.m1x.mixenergy.MixEnergy;
+import com.m1x.mixenergy.client.EnergyOverlayHandler;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import net.minecraft.ChatFormatting;
 // GuiGraphics was renamed to GuiGraphicsExtractor in 26.2, when screen drawing became a
@@ -39,6 +40,11 @@ public class MixEnergyConfigScreen extends Screen {
     private static final int PANEL_MAX_WIDTH = 440;
     private static final int ROW_HEIGHT = 16;
     private static final double MAX_REGEN_SPEED_MULTIPLIER = 5.0;
+    // The config itself accepts far more, but a slider that has to be readable needs a
+    // range players will actually use; larger amounts stay editable in the toml file.
+    private static final double MAX_CONSUMABLE_ENERGY_RESTORE = 30.0;
+    /** Fill the bar preview is drawn at, so both the fill and its background are visible. */
+    private static final float PREVIEW_FILL_RATIO = 0.6f;
     // Fully opaque: the panel used to let a sliver of the world (blurred, when the
     // "Menu Background Blurriness" option is on) show through its ~85% alpha, which
     // softened the edges of the text drawn on top of it.
@@ -56,6 +62,7 @@ public class MixEnergyConfigScreen extends Screen {
     private final List<String> gameplayDescriptionKeys = new ArrayList<>();
     private final Map<Button, BooleanValue> sourceButtons = new LinkedHashMap<>();
     private final Map<Button, PositionChoice> positionButtons = new LinkedHashMap<>();
+    private final Map<Button, MixEnergyConfig.EnergyBarSkin> skinButtons = new LinkedHashMap<>();
 
     private Tab activeTab = Tab.INTERFACE;
     private boolean remoteServer;
@@ -68,6 +75,7 @@ public class MixEnergyConfigScreen extends Screen {
     private Button gameplayTabButton;
     private Button resetButton;
     private RegenSpeedSlider regenSpeedSlider;
+    private ConsumableRestoreSlider consumableRestoreSlider;
 
     public MixEnergyConfigScreen(Screen parentScreen) {
         super(Component.translatable("mixenergy.config.title"));
@@ -82,6 +90,7 @@ public class MixEnergyConfigScreen extends Screen {
         gameplayDescriptionKeys.clear();
         sourceButtons.clear();
         positionButtons.clear();
+        skinButtons.clear();
 
         remoteServer = minecraft.getConnection() != null && !minecraft.hasSingleplayerServer();
         combatRollLoaded = ModList.get().isLoaded("combatroll");
@@ -118,12 +127,12 @@ public class MixEnergyConfigScreen extends Screen {
     }
 
     private void createInterfaceWidgets() {
-        int buttonWidth = 48;
-        int buttonHeight = 24;
-        int gap = 6;
+        int buttonWidth = 56;
+        int buttonHeight = 22;
+        int gap = 4;
         int gridWidth = buttonWidth * 3 + gap * 2;
         int startX = width / 2 - gridWidth / 2;
-        int startY = contentTop + 28;
+        int startY = contentTop + 14;
 
         addPositionButton(startX, startY, buttonWidth, buttonHeight, -1, -1,
                 MixEnergyConfig.EnergyBarPosition.TOP_LEFT);
@@ -140,6 +149,38 @@ public class MixEnergyConfigScreen extends Screen {
                 buttonWidth, buttonHeight, 1, 1,
                 MixEnergyConfig.EnergyBarPosition.BOTTOM_RIGHT);
         updatePositionButtons();
+
+        // One button per skin on the row below the position grid, aligned to its columns.
+        MixEnergyConfig.EnergyBarSkin[] skins = MixEnergyConfig.EnergyBarSkin.values();
+        int skinY = startY + (buttonHeight + gap) * 2 + 2;
+        for (int index = 0; index < skins.length; index++) {
+            addSkinButton(
+                    startX + (buttonWidth + gap) * index,
+                    skinY,
+                    buttonWidth,
+                    20,
+                    skins[index]
+            );
+        }
+    }
+
+    private void addSkinButton(
+            int x,
+            int y,
+            int width,
+            int height,
+            MixEnergyConfig.EnergyBarSkin skin
+    ) {
+        Button button = Button.builder(
+                skinName(skin),
+                pressed -> {
+                    MixEnergyConfig.ENERGY_BAR_SKIN.set(skin);
+                    MixEnergyConfig.saveClient();
+                }
+        ).bounds(x, y, width, height).build();
+        button.setTooltip(Tooltip.create(skinName(skin)));
+        interfaceWidgets.add(addRenderableWidget(button));
+        skinButtons.put(button, skin);
     }
 
     private void addPositionButton(
@@ -224,21 +265,35 @@ public class MixEnergyConfigScreen extends Screen {
             );
         }
 
-        gameplayLabelKeys.add("mixenergy.config.regeneration_speed");
-        gameplayDescriptionKeys.add("mixenergy.config.regeneration_speed.description");
         int sliderWidth = 104;
-        int sliderY = gameplayRowY(row);
-        regenSpeedSlider = new RegenSpeedSlider(
-                panelX + panelWidth - sliderWidth - 8,
-                sliderY,
-                sliderWidth,
-                20
+        int sliderX = panelX + panelWidth - sliderWidth - 8;
+
+        regenSpeedSlider = new RegenSpeedSlider(sliderX, gameplayRowY(row++), sliderWidth);
+        addSlider(
+                "mixenergy.config.regeneration_speed",
+                "mixenergy.config.regeneration_speed.description",
+                regenSpeedSlider
         );
-        regenSpeedSlider.active = !remoteServer;
-        regenSpeedSlider.setTooltip(Tooltip.create(Component.translatable(
-                "mixenergy.config.regeneration_speed.description"
-        )));
-        gameplayWidgets.add(addRenderableWidget(regenSpeedSlider));
+
+        consumableRestoreSlider =
+                new ConsumableRestoreSlider(sliderX, gameplayRowY(row++), sliderWidth);
+        addSlider(
+                "mixenergy.config.consumable_restore",
+                "mixenergy.config.consumable_restore.description",
+                consumableRestoreSlider
+        );
+    }
+
+    private void addSlider(
+            String labelKey,
+            String descriptionKey,
+            AbstractSliderButton slider
+    ) {
+        gameplayLabelKeys.add(labelKey);
+        gameplayDescriptionKeys.add(descriptionKey);
+        slider.active = !remoteServer;
+        slider.setTooltip(Tooltip.create(Component.translatable(descriptionKey)));
+        gameplayWidgets.add(addRenderableWidget(slider));
     }
 
     private void addSourceToggle(
@@ -290,6 +345,10 @@ public class MixEnergyConfigScreen extends Screen {
         );
     }
 
+    private Component skinName(MixEnergyConfig.EnergyBarSkin skin) {
+        return Component.translatable("mixenergy.config.skin." + skin.getName());
+    }
+
     private void setActiveTab(Tab tab) {
         if (activeTab != tab) {
             activeTab = tab;
@@ -316,6 +375,7 @@ public class MixEnergyConfigScreen extends Screen {
             MixEnergyConfig.ENERGY_BAR_POSITION.set(
                     MixEnergyConfig.EnergyBarPosition.ABOVE_HOTBAR
             );
+            MixEnergyConfig.ENERGY_BAR_SKIN.set(MixEnergyConfig.EnergyBarSkin.DEFAULT);
             MixEnergyConfig.saveClient();
             updatePositionButtons();
             return;
@@ -329,9 +389,11 @@ public class MixEnergyConfigScreen extends Screen {
                 value.set(value != MixEnergyConfig.ENERGY_COST_FOR_JUMPING)
         );
         MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.set(1.0);
+        MixEnergyConfig.CONSUMABLE_ENERGY_RESTORE.set(8.0);
         MixEnergyConfig.saveCommon();
         sourceButtons.forEach((button, value) -> button.setMessage(sourceState(value)));
         regenSpeedSlider.setConfigValue(1.0);
+        consumableRestoreSlider.setConfigValue(8.0);
     }
 
     // Screen#render was replaced by extractRenderState in 26.2: the screen now records
@@ -413,9 +475,23 @@ public class MixEnergyConfigScreen extends Screen {
 
         if (activeTab == Tab.INTERFACE) {
             renderPositionArrows(graphics);
+            renderSkinSelection(graphics);
         } else {
             renderGameplayTooltip(graphics, mouseX, mouseY);
         }
+    }
+
+    //? if <26 {
+    private void renderSkinSelection(GuiGraphics graphics) {
+    //?} else {
+    /*private void renderSkinSelection(GuiGraphicsExtractor graphics) {
+    *///?}
+        MixEnergyConfig.EnergyBarSkin selected = MixEnergyConfig.ENERGY_BAR_SKIN.get();
+        skinButtons.forEach((button, skin) -> {
+            if (button.visible && skin == selected) {
+                drawSelectionBorder(graphics, button, COLOR_ACCENT);
+            }
+        });
     }
 
     // The text drawing methods were renamed in 26.2: drawCenteredString became
@@ -452,7 +528,7 @@ public class MixEnergyConfigScreen extends Screen {
     /*private void renderInterfaceTab(GuiGraphicsExtractor graphics) {
     *///?}
         Component description = Component.translatable(
-                "mixenergy.config.position.description"
+                "mixenergy.config.appearance.description"
         );
         centeredText(
                 graphics,
@@ -461,11 +537,15 @@ public class MixEnergyConfigScreen extends Screen {
                 contentTop + 2,
                 COLOR_SECONDARY_TEXT
         );
+
+        String selection = positionName(MixEnergyConfig.ENERGY_BAR_POSITION.get()).getString()
+                + " · "
+                + skinName(MixEnergyConfig.ENERGY_BAR_SKIN.get()).getString();
         centeredText(
                 graphics,
-                positionName(MixEnergyConfig.ENERGY_BAR_POSITION.get()),
+                font.plainSubstrByWidth(selection, panelWidth - 24),
                 width / 2,
-                contentTop + 91,
+                contentTop + 92,
                 COLOR_ACCENT
         );
         renderPositionPreview(graphics);
@@ -476,10 +556,15 @@ public class MixEnergyConfigScreen extends Screen {
     //?} else {
     /*private void renderPositionPreview(GuiGraphicsExtractor graphics) {
     *///?}
-        int previewWidth = Math.min(150, panelWidth - 40);
-        int previewHeight = 32;
+        // Wide enough that the bar drawn at its real size still has room to sit against
+        // either edge, so the left and right positions stay distinguishable.
+        int previewWidth = Math.max(
+                EnergyOverlayHandler.PREVIEW_WIDTH + 16,
+                Math.min(190, panelWidth - 32)
+        );
+        int previewHeight = 34;
         int previewX = width / 2 - previewWidth / 2;
-        int previewY = contentTop + 104;
+        int previewY = contentTop + 102;
         int previewRight = previewX + previewWidth;
         int previewBottom = previewY + previewHeight;
 
@@ -502,9 +587,9 @@ public class MixEnergyConfigScreen extends Screen {
                 0xFF39434A
         );
 
-        int barWidth = 38;
-        int barHeight = 4;
-        int margin = 5;
+        int barWidth = EnergyOverlayHandler.PREVIEW_WIDTH;
+        int barHeight = EnergyOverlayHandler.PREVIEW_HEIGHT;
+        int margin = 4;
         int barX;
         int barY;
         switch (MixEnergyConfig.ENERGY_BAR_POSITION.get()) {
@@ -530,18 +615,17 @@ public class MixEnergyConfigScreen extends Screen {
             }
             case ABOVE_HOTBAR -> {
                 barX = width / 2 - barWidth / 2;
-                barY = previewBottom - 11;
+                barY = previewBottom - 7 - barHeight;
             }
             default -> throw new IllegalStateException("Unknown energy bar position");
         }
 
-        graphics.fill(barX, barY, barX + barWidth, barY + barHeight, 0xFF253037);
-        graphics.fill(
-                barX + 1,
-                barY + 1,
-                barX + barWidth - 1,
-                barY + barHeight - 1,
-                COLOR_ACCENT
+        EnergyOverlayHandler.renderSkinPreview(
+                graphics,
+                MixEnergyConfig.ENERGY_BAR_SKIN.get(),
+                barX,
+                barY,
+                PREVIEW_FILL_RATIO
         );
     }
 
@@ -764,15 +848,19 @@ public class MixEnergyConfigScreen extends Screen {
     }
 
     private final class RegenSpeedSlider extends AbstractSliderButton {
-        private RegenSpeedSlider(int x, int y, int width, int height) {
+        private RegenSpeedSlider(int x, int y, int width) {
             super(
                     x,
                     y,
                     width,
-                    height,
+                    ROW_HEIGHT,
                     Component.empty(),
-                    MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.get()
-                            / MAX_REGEN_SPEED_MULTIPLIER
+                    Mth.clamp(
+                            MixEnergyConfig.ENERGY_REGEN_SPEED_MULTIPLIER.get()
+                                    / MAX_REGEN_SPEED_MULTIPLIER,
+                            0.0,
+                            1.0
+                    )
             );
             updateMessage();
         }
@@ -818,6 +906,66 @@ public class MixEnergyConfigScreen extends Screen {
                     0.0,
                     1.0
             );
+            updateMessage();
+        }
+    }
+
+    private final class ConsumableRestoreSlider extends AbstractSliderButton {
+        private ConsumableRestoreSlider(int x, int y, int width) {
+            super(
+                    x,
+                    y,
+                    width,
+                    ROW_HEIGHT,
+                    Component.empty(),
+                    Mth.clamp(
+                            MixEnergyConfig.CONSUMABLE_ENERGY_RESTORE.get()
+                                    / MAX_CONSUMABLE_ENERGY_RESTORE,
+                            0.0,
+                            1.0
+                    )
+            );
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            if (remoteServer) {
+                setMessage(Component.translatable("mixenergy.config.server_controlled")
+                        .withStyle(ChatFormatting.GRAY));
+                return;
+            }
+
+            double configuredValue = getConfiguredValue();
+            if (configuredValue <= 0.0) {
+                setMessage(Component.translatable("mixenergy.config.disabled")
+                        .withStyle(ChatFormatting.RED));
+            } else {
+                setMessage(Component.literal(String.format(
+                                Locale.ROOT,
+                                "+%.1f",
+                                configuredValue
+                        ))
+                        .withStyle(ChatFormatting.GREEN));
+            }
+        }
+
+        @Override
+        protected void applyValue() {
+            if (remoteServer) {
+                return;
+            }
+            MixEnergyConfig.CONSUMABLE_ENERGY_RESTORE.set(getConfiguredValue());
+            MixEnergyConfig.saveCommon();
+        }
+
+        /** Rounded to half points, so the slider can still land on the small values. */
+        private double getConfiguredValue() {
+            return Math.round(value * MAX_CONSUMABLE_ENERGY_RESTORE * 2.0) / 2.0;
+        }
+
+        private void setConfigValue(double configuredValue) {
+            value = Mth.clamp(configuredValue / MAX_CONSUMABLE_ENERGY_RESTORE, 0.0, 1.0);
             updateMessage();
         }
     }

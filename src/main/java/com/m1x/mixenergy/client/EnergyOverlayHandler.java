@@ -55,54 +55,15 @@ import com.mojang.blaze3d.systems.RenderSystem;
 /*import net.minecraft.client.renderer.RenderPipelines;
 *///?}
 
+import java.util.EnumMap;
+import java.util.Map;
+
 //? if forge {
 @Mod.EventBusSubscriber(modid = MixEnergy.MOD_ID, value = Dist.CLIENT)
 //?} else {
 /*@EventBusSubscriber(modid = MixEnergy.MOD_ID, value = Dist.CLIENT)
 *///?}
 public final class EnergyOverlayHandler {
-    //? if <1.21.11 {
-    private static final ResourceLocation CENTER =
-            texture("textures/gui/energy_bar/center.png");
-    private static final ResourceLocation ENERGY_BAR_LEFT =
-            texture("textures/gui/energy_bar/energy_bar_left.png");
-    private static final ResourceLocation ENERGY_BAR_RIGHT =
-            texture("textures/gui/energy_bar/energy_bar_right.png");
-    private static final ResourceLocation ENERGY_BAR_BG_LEFT =
-            texture("textures/gui/energy_bar/energy_bar_bg_left.png");
-    private static final ResourceLocation ENERGY_BAR_BG_RIGHT =
-            texture("textures/gui/energy_bar/energy_bar_bg_right.png");
-    private static final ResourceLocation LEFT_FRAME =
-            texture("textures/gui/energy_bar/left_frame.png");
-    private static final ResourceLocation RIGHT_FRAME =
-            texture("textures/gui/energy_bar/right_frame.png");
-    private static final ResourceLocation LEFT_FRAME_FULL =
-            texture("textures/gui/energy_bar/left_frame_full.png");
-    private static final ResourceLocation RIGHT_FRAME_FULL =
-            texture("textures/gui/energy_bar/right_frame_full.png");
-    private static final ResourceLocation[] CENTER_ANIMATION = new ResourceLocation[18];
-    //?} else {
-    /*private static final Identifier CENTER =
-            texture("textures/gui/energy_bar/center.png");
-    private static final Identifier ENERGY_BAR_LEFT =
-            texture("textures/gui/energy_bar/energy_bar_left.png");
-    private static final Identifier ENERGY_BAR_RIGHT =
-            texture("textures/gui/energy_bar/energy_bar_right.png");
-    private static final Identifier ENERGY_BAR_BG_LEFT =
-            texture("textures/gui/energy_bar/energy_bar_bg_left.png");
-    private static final Identifier ENERGY_BAR_BG_RIGHT =
-            texture("textures/gui/energy_bar/energy_bar_bg_right.png");
-    private static final Identifier LEFT_FRAME =
-            texture("textures/gui/energy_bar/left_frame.png");
-    private static final Identifier RIGHT_FRAME =
-            texture("textures/gui/energy_bar/right_frame.png");
-    private static final Identifier LEFT_FRAME_FULL =
-            texture("textures/gui/energy_bar/left_frame_full.png");
-    private static final Identifier RIGHT_FRAME_FULL =
-            texture("textures/gui/energy_bar/right_frame_full.png");
-    private static final Identifier[] CENTER_ANIMATION = new Identifier[18];
-    *///?}
-
     private static final int CENTER_WIDTH = 11;
     private static final int BAR_TEXTURE_WIDTH = 9;
     private static final int BAR_HEIGHT = 10;
@@ -130,6 +91,16 @@ public final class EnergyOverlayHandler {
      * instead of draining to empty and snapping back to full on the next real update.
      */
     private static final int PREDICTION_GRACE_TICKS = 20;
+    private static final int CENTER_ANIMATION_FRAMES = 18;
+
+    /** Half-bar width the config screen's skin preview is drawn at. */
+    public static final int PREVIEW_HALF_WIDTH = 24;
+    public static final int PREVIEW_WIDTH =
+            2 * FRAME_WIDTH + 2 * PREVIEW_HALF_WIDTH + CENTER_WIDTH;
+    public static final int PREVIEW_HEIGHT = BAR_HEIGHT;
+
+    private static final Map<MixEnergyConfig.EnergyBarSkin, SkinTextures> SKIN_TEXTURES =
+            new EnumMap<>(MixEnergyConfig.EnergyBarSkin.class);
 
     private static float energyValue = 27.0f;
     private static float displayedEnergyValue = 27.0f;
@@ -146,12 +117,16 @@ public final class EnergyOverlayHandler {
     private static boolean animating;
     private static boolean hasServerSnapshot;
     private static int unconfirmedPredictionTicks;
+    /**
+     * Alpha every quad in the current draw is multiplied by. The HUD sets it from the fade
+     * and the config screen's preview draws fully opaque, so both paths share the drawing
+     * code below without either having to thread the value through every call.
+     */
+    private static float renderAlpha = 1.0f;
 
     static {
-        for (int i = 0; i < CENTER_ANIMATION.length; i++) {
-            CENTER_ANIMATION[i] = texture(
-                    "textures/gui/energy_bar/center_full_" + (i + 1) + ".png"
-            );
+        for (MixEnergyConfig.EnergyBarSkin skin : MixEnergyConfig.EnergyBarSkin.values()) {
+            SKIN_TEXTURES.put(skin, new SkinTextures(skin));
         }
     }
 
@@ -411,7 +386,52 @@ public final class EnergyOverlayHandler {
 
         float ratio = Mth.clamp(displayedEnergyValue / maxEnergyValue, 0.0f, 1.0f);
         int filledHalfWidth = Math.round(halfWidth * ratio);
-        renderBar(graphics, position[0], position[1], halfWidth, filledHalfWidth);
+        renderAlpha = overlayAlpha;
+        renderBar(
+                graphics,
+                SKIN_TEXTURES.get(MixEnergyConfig.ENERGY_BAR_SKIN.get()),
+                position[0],
+                position[1],
+                halfWidth,
+                filledHalfWidth,
+                // Matched against the drawn value, not the last one the server sent, so the
+                // frames never claim a full bar while the fill is still draining towards
+                // the prediction.
+                displayedEnergyValue >= maxEnergyValue - 0.001f,
+                true
+        );
+    }
+
+    /**
+     * Draws one skin at a fixed size and fill for the config screen, so the preview there
+     * is the same bar the HUD paints rather than a stand-in for it. Always fully opaque and
+     * never animated: the preview must not blink out with the HUD's fade or flash the
+     * "energy full" animation while a skin is only being looked at.
+     */
+    //? if <26 {
+    public static void renderSkinPreview(
+            GuiGraphics graphics,
+    //?} else {
+    /*public static void renderSkinPreview(
+            GuiGraphicsExtractor graphics,
+    *///?}
+            MixEnergyConfig.EnergyBarSkin skin,
+            int x,
+            int y,
+            float ratio
+    ) {
+        renderAlpha = 1.0f;
+        renderBar(
+                graphics,
+                SKIN_TEXTURES.get(skin),
+                x,
+                y,
+                PREVIEW_HALF_WIDTH,
+                Math.round(PREVIEW_HALF_WIDTH * Mth.clamp(ratio, 0.0f, 1.0f)),
+                ratio >= 1.0f,
+                false
+        );
+        renderAlpha = overlayAlpha;
     }
 
     private static void updateAlpha() {
@@ -494,7 +514,7 @@ public final class EnergyOverlayHandler {
 
     //? if >=1.21.2 {
     /*private static int overlayTint() {
-        int alpha = Mth.clamp(Math.round(overlayAlpha * 255.0f), 0, 255);
+        int alpha = Mth.clamp(Math.round(renderAlpha * 255.0f), 0, 255);
         return (alpha << 24) | 0x00FFFFFF;
     }
     *///?}
@@ -505,23 +525,23 @@ public final class EnergyOverlayHandler {
             //?} else {
             /*GuiGraphicsExtractor graphics,
             *///?}
+            SkinTextures skin,
             int startX,
             int y,
             int halfWidth,
-            int filledHalfWidth
+            int filledHalfWidth,
+            boolean fullEnergy,
+            boolean allowAnimation
     ) {
         int leftInnerX = startX + FRAME_WIDTH;
         int centerX = leftInnerX + halfWidth;
         int rightInnerX = centerX + CENTER_WIDTH;
-        // Matched against the drawn value, not the last one the server sent, so the frames
-        // never claim a full bar while the fill is still draining towards the prediction.
-        boolean fullEnergy = displayedEnergyValue >= maxEnergyValue - 0.001f;
-        var leftFrame = fullEnergy ? LEFT_FRAME_FULL : LEFT_FRAME;
-        var rightFrame = fullEnergy ? RIGHT_FRAME_FULL : RIGHT_FRAME;
+        var leftFrame = fullEnergy ? skin.leftFrameFull : skin.leftFrame;
+        var rightFrame = fullEnergy ? skin.rightFrameFull : skin.rightFrame;
 
         //? if <1.21.2 {
         RenderSystem.enableBlend();
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, renderAlpha);
         //?}
 
         drawTexture(
@@ -536,11 +556,11 @@ public final class EnergyOverlayHandler {
                 FRAME_WIDTH,
                 BAR_HEIGHT
         );
-        renderTiled(graphics, ENERGY_BAR_BG_LEFT, leftInnerX, y, halfWidth);
-        renderLeftFill(graphics, centerX, y, filledHalfWidth);
-        renderCenter(graphics, centerX, y);
-        renderTiled(graphics, ENERGY_BAR_BG_RIGHT, rightInnerX, y, halfWidth);
-        renderTiled(graphics, ENERGY_BAR_RIGHT, rightInnerX, y, filledHalfWidth);
+        renderTiled(graphics, skin.backgroundLeft, leftInnerX, y, halfWidth);
+        renderLeftFill(graphics, skin, centerX, y, filledHalfWidth);
+        renderCenter(graphics, skin, centerX, y, allowAnimation);
+        renderTiled(graphics, skin.backgroundRight, rightInnerX, y, halfWidth);
+        renderTiled(graphics, skin.fillRight, rightInnerX, y, filledHalfWidth);
         drawTexture(
                 graphics,
                 rightFrame,
@@ -566,6 +586,7 @@ public final class EnergyOverlayHandler {
             //?} else {
             /*GuiGraphicsExtractor graphics,
             *///?}
+            SkinTextures skin,
             int centerX,
             int y,
             int width
@@ -577,7 +598,7 @@ public final class EnergyOverlayHandler {
         if (partialWidth > 0) {
             drawTexture(
                     graphics,
-                    ENERGY_BAR_LEFT,
+                    skin.fillLeft,
                     x,
                     y,
                     BAR_TEXTURE_WIDTH - partialWidth,
@@ -593,7 +614,7 @@ public final class EnergyOverlayHandler {
         for (int segment = 0; segment < fullSegments; segment++) {
             drawTexture(
                     graphics,
-                    ENERGY_BAR_LEFT,
+                    skin.fillLeft,
                     x + segment * BAR_TEXTURE_WIDTH,
                     y,
                     0,
@@ -656,18 +677,25 @@ public final class EnergyOverlayHandler {
     }
 
     //? if <26 {
-    private static void renderCenter(GuiGraphics graphics, int x, int y) {
+    private static void renderCenter(
+            GuiGraphics graphics,
     //?} else {
-    /*private static void renderCenter(GuiGraphicsExtractor graphics, int x, int y) {
+    /*private static void renderCenter(
+            GuiGraphicsExtractor graphics,
     *///?}
-        var texture = CENTER;
-        if (animating) {
+            SkinTextures skin,
+            int x,
+            int y,
+            boolean allowAnimation
+    ) {
+        var texture = skin.center;
+        if (allowAnimation && animating) {
             long elapsed = Util.getMillis() - animationStartTime;
             int frame = (int) (elapsed / ANIMATION_FRAME_DURATION_MILLIS);
-            if (frame >= CENTER_ANIMATION.length) {
+            if (frame >= skin.centerAnimation.length) {
                 animating = false;
             } else {
-                texture = CENTER_ANIMATION[frame];
+                texture = skin.centerAnimation[frame];
             }
         }
 
@@ -757,5 +785,55 @@ public final class EnergyOverlayHandler {
         }
 
         return Math.max(leftOffset, rightOffset);
+    }
+
+    /**
+     * The nine textures plus animation strip one skin is drawn from. Every skin ships the
+     * same file names under its own directory, so a skin is nothing more than the prefix
+     * those names are resolved against.
+     */
+    private static final class SkinTextures {
+        //? if <1.21.11 {
+        private final ResourceLocation center;
+        private final ResourceLocation fillLeft;
+        private final ResourceLocation fillRight;
+        private final ResourceLocation backgroundLeft;
+        private final ResourceLocation backgroundRight;
+        private final ResourceLocation leftFrame;
+        private final ResourceLocation rightFrame;
+        private final ResourceLocation leftFrameFull;
+        private final ResourceLocation rightFrameFull;
+        private final ResourceLocation[] centerAnimation =
+                new ResourceLocation[CENTER_ANIMATION_FRAMES];
+        //?} else {
+        /*private final Identifier center;
+        private final Identifier fillLeft;
+        private final Identifier fillRight;
+        private final Identifier backgroundLeft;
+        private final Identifier backgroundRight;
+        private final Identifier leftFrame;
+        private final Identifier rightFrame;
+        private final Identifier leftFrameFull;
+        private final Identifier rightFrameFull;
+        private final Identifier[] centerAnimation =
+                new Identifier[CENTER_ANIMATION_FRAMES];
+        *///?}
+
+        private SkinTextures(MixEnergyConfig.EnergyBarSkin skin) {
+            String directory = "textures/gui/energy_bar/" + skin.getTextureDirectory();
+            center = texture(directory + "center.png");
+            fillLeft = texture(directory + "energy_bar_left.png");
+            fillRight = texture(directory + "energy_bar_right.png");
+            backgroundLeft = texture(directory + "energy_bar_bg_left.png");
+            backgroundRight = texture(directory + "energy_bar_bg_right.png");
+            leftFrame = texture(directory + "left_frame.png");
+            rightFrame = texture(directory + "right_frame.png");
+            leftFrameFull = texture(directory + "left_frame_full.png");
+            rightFrameFull = texture(directory + "right_frame_full.png");
+            for (int frame = 0; frame < centerAnimation.length; frame++) {
+                centerAnimation[frame] =
+                        texture(directory + "center_full_" + (frame + 1) + ".png");
+            }
+        }
     }
 }
