@@ -1,5 +1,6 @@
 package com.m1x.mixenergy.common;
 
+import com.m1x.mixenergy.MixEnergy;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import com.m1x.mixenergy.common.entity.EnergyOrbEntity;
 import com.m1x.mixenergy.network.EnergyActionPacket;
@@ -7,9 +8,9 @@ import com.m1x.mixenergy.network.EnergyUpdatePacket;
 import com.m1x.mixenergy.network.NetworkHandler;
 import com.m1x.mixenergy.registry.MixEnergyEffects;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
+//? if forge {
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -21,18 +22,44 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
+//?} else {
+/*import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+// BlockEvent.BreakEvent became a top-level BreakBlockEvent in 26.2.
+//? if >=26 {
+/^import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
+^///?}
+*///?}
 
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Mod.EventBusSubscriber(modid = "mixenergy")
+//? if forge {
+@Mod.EventBusSubscriber(modid = MixEnergy.MOD_ID)
+//?} else {
+/*@EventBusSubscriber(modid = MixEnergy.MOD_ID)
+*///?}
 public final class PlayerEnergyManager {
     public static final float SPRINT_ENERGY_THRESHOLD = 0.5f;
 
     private static final int FATIGUE_DURATION_TICKS = 100;
-    private static final int CLIENT_SYNC_INTERVAL_TICKS = 10;
+    /**
+     * How often a still-changing value is pushed to the client. The client predicts the
+     * continuous drain itself, so this only bounds how far that prediction may drift; at
+     * half a second the correction was large enough to be visible as the bar catching up.
+     * Nothing is sent while the value is unchanged, so an idle player still costs nothing.
+     */
+    private static final int CLIENT_SYNC_INTERVAL_TICKS = 2;
     private static final long REGEN_INTERVAL_TICKS = 3L;
     private static final long MAX_REGEN_BOOST_TIME_TICKS = 60L;
     private static final long BETTER_COMBAT_ATTACK_TIMEOUT_TICKS = 60L;
@@ -45,6 +72,7 @@ public final class PlayerEnergyManager {
     private PlayerEnergyManager() {
     }
 
+    //? if forge {
     @SubscribeEvent
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END
@@ -53,16 +81,27 @@ public final class PlayerEnergyManager {
                 || !usesEnergy(player)) {
             return;
         }
+        tickPlayer(player);
+    }
+    //?} else {
+    /*@SubscribeEvent
+    public static void onPlayerTick(PlayerTickEvent.Post event) {
+        if (!(event.getEntity() instanceof ServerPlayer player) || !usesEnergy(player)) {
+            return;
+        }
+        tickPlayer(player);
+    }
+    *///?}
 
-        PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY)
-                .orElse(null);
+    private static void tickPlayer(ServerPlayer player) {
+        PlayerEnergyData energyData = PlayerEnergyProvider.get(player);
         if (energyData == null) {
             return;
         }
 
-        long gameTime = player.serverLevel().getGameTime();
+        long gameTime = player.level().getGameTime();
         boolean movementBlocked = energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD
-                || player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get());
+                || MixEnergyEffects.isFatigued(player);
         boolean forceSync = enforceExhaustion(player, energyData);
 
         if (!movementBlocked) {
@@ -111,7 +150,7 @@ public final class PlayerEnergyManager {
 
     private static boolean enforceExhaustion(ServerPlayer player, PlayerEnergyData energyData) {
         boolean exhausted = energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD;
-        boolean fatigued = player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get());
+        boolean fatigued = MixEnergyEffects.isFatigued(player);
 
         if (!exhausted && !fatigued) {
             return false;
@@ -176,18 +215,11 @@ public final class PlayerEnergyManager {
     }
 
     private static void applyFatigue(Player player) {
-        if (player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())) {
+        if (MixEnergyEffects.isFatigued(player)) {
             return;
         }
 
-        player.addEffect(new MobEffectInstance(
-                MixEnergyEffects.MIX_ENERGY_SLOWNESS.get(),
-                FATIGUE_DURATION_TICKS,
-                0,
-                false,
-                true,
-                true
-        ));
+        player.addEffect(MixEnergyEffects.fatigue(FATIGUE_DURATION_TICKS));
     }
 
     private static void forceStopFastMovement(ServerPlayer player) {
@@ -204,7 +236,7 @@ public final class PlayerEnergyManager {
         if (!fastSwimming
                 || !usesEnergy(player)
                 || !player.isInWater()
-                || player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())
+                || MixEnergyEffects.isFatigued(player)
                 || !hasEnoughEnergyForFastMovement(player)) {
             CLIENT_FAST_SWIMMING.remove(player.getUUID());
             return;
@@ -213,8 +245,7 @@ public final class PlayerEnergyManager {
     }
 
     private static boolean hasEnoughEnergyForFastMovement(ServerPlayer player) {
-        PlayerEnergyData data = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY)
-                .orElse(null);
+        PlayerEnergyData data = PlayerEnergyProvider.get(player);
         return data != null && data.getEnergy() >= SPRINT_ENERGY_THRESHOLD;
     }
 
@@ -231,17 +262,20 @@ public final class PlayerEnergyManager {
             return;
         }
 
-        player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
-            energyData.setEnergy(energyData.getEnergy() - amount);
-            energyData.setLastActionTick(player.serverLevel().getGameTime());
+        PlayerEnergyData energyData = PlayerEnergyProvider.get(player);
+        if (energyData == null) {
+            return;
+        }
 
-            if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD) {
-                applyFatigue(player);
-                forceStopFastMovement(player);
-            }
+        energyData.setEnergy(energyData.getEnergy() - amount);
+        energyData.setLastActionTick(player.level().getGameTime());
 
-            syncEnergyToClient(player, energyData, true, instantVisual);
-        });
+        if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD) {
+            applyFatigue(player);
+            forceStopFastMovement(player);
+        }
+
+        syncEnergyToClient(player, energyData, true, instantVisual);
     }
 
     public static void consumeCombatRollEnergy(ServerPlayer player) {
@@ -261,7 +295,7 @@ public final class PlayerEnergyManager {
             return;
         }
 
-        long gameTime = player.serverLevel().getGameTime();
+        long gameTime = player.level().getGameTime();
         BetterCombatAttackState previous = BETTER_COMBAT_ATTACKS.get(player.getUUID());
         if (previous != null && previous.gameTime() == gameTime) {
             return;
@@ -286,13 +320,16 @@ public final class PlayerEnergyManager {
             return;
         }
 
-        player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).ifPresent(energyData -> {
-            float previousEnergy = energyData.getEnergy();
-            energyData.setEnergy(energyData.getEnergy() + amount);
-            if (energyData.getEnergy() != previousEnergy) {
-                syncEnergyToClient(player, energyData);
-            }
-        });
+        PlayerEnergyData energyData = PlayerEnergyProvider.get(player);
+        if (energyData == null) {
+            return;
+        }
+
+        float previousEnergy = energyData.getEnergy();
+        energyData.setEnergy(energyData.getEnergy() + amount);
+        if (energyData.getEnergy() != previousEnergy) {
+            syncEnergyToClient(player, energyData);
+        }
     }
 
     private static boolean tryConsumeEnergy(ServerPlayer player, float amount) {
@@ -308,13 +345,13 @@ public final class PlayerEnergyManager {
             return true;
         }
 
-        PlayerEnergyData energyData = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
+        PlayerEnergyData energyData = PlayerEnergyProvider.get(player);
         if (energyData == null) {
             return true;
         }
 
         if (energyData.getEnergy() < amount) {
-            energyData.setLastActionTick(player.serverLevel().getGameTime());
+            energyData.setLastActionTick(player.level().getGameTime());
             if (energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD) {
                 applyFatigue(player);
                 forceStopFastMovement(player);
@@ -328,7 +365,11 @@ public final class PlayerEnergyManager {
     }
 
     @SubscribeEvent
+    //? if <26 {
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
+    //?} else {
+    /*public static void onBlockBreak(BreakBlockEvent event) {
+    *///?}
         if (!MixEnergyConfig.ENERGY_COST_FOR_BREAKING_BLOCKS.get()) {
             return;
         }
@@ -361,8 +402,15 @@ public final class PlayerEnergyManager {
         }
     }
 
+    // LivingAttackEvent was split up in 1.21; LivingIncomingDamageEvent is the cancellable
+    // pre-damage phase that matches the old behaviour.
+    //? if forge {
     @SubscribeEvent
     public static void onLivingAttack(LivingAttackEvent event) {
+    //?} else {
+    /*@SubscribeEvent
+    public static void onLivingAttack(LivingIncomingDamageEvent event) {
+    *///?}
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || !usesEnergy(player)) {
             return;
@@ -371,7 +419,7 @@ public final class PlayerEnergyManager {
         if (ModList.get().isLoaded("bettercombat")) {
             BetterCombatAttackState attackState = BETTER_COMBAT_ATTACKS.get(player.getUUID());
             if (attackState != null) {
-                long age = player.serverLevel().getGameTime() - attackState.gameTime();
+                long age = player.level().getGameTime() - attackState.gameTime();
                 if (age >= 0L && age <= BETTER_COMBAT_ATTACK_TIMEOUT_TICKS) {
                     if (!attackState.allowed()) {
                         event.setCanceled(true);
@@ -446,19 +494,19 @@ public final class PlayerEnergyManager {
     }
 
     private static boolean playerNeedsEnergy(ServerPlayer player) {
-        PlayerEnergyData data = player.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
+        PlayerEnergyData data = PlayerEnergyProvider.get(player);
         return data != null && data.getEnergy() < data.getMaxEnergy();
     }
 
     @SubscribeEvent
     public static void onPlayerClone(PlayerEvent.Clone event) {
         Player original = event.getOriginal();
+        //? if forge {
         original.reviveCaps();
+        //?}
         try {
-            PlayerEnergyData oldData = original.getCapability(PlayerEnergyProvider.PLAYER_ENERGY).orElse(null);
-            PlayerEnergyData newData = event.getEntity()
-                    .getCapability(PlayerEnergyProvider.PLAYER_ENERGY)
-                    .orElse(null);
+            PlayerEnergyData oldData = PlayerEnergyProvider.get(original);
+            PlayerEnergyData newData = PlayerEnergyProvider.get(event.getEntity());
 
             if (oldData == null || newData == null) {
                 return;
@@ -475,7 +523,9 @@ public final class PlayerEnergyManager {
             CLIENT_FAST_SWIMMING.remove(event.getEntity().getUUID());
             BETTER_COMBAT_ATTACKS.remove(event.getEntity().getUUID());
         } finally {
+            //? if forge {
             original.invalidateCaps();
+            //?}
         }
     }
 
@@ -496,8 +546,10 @@ public final class PlayerEnergyManager {
 
     private static void syncPlayer(Player player) {
         if (player instanceof ServerPlayer serverPlayer) {
-            serverPlayer.getCapability(PlayerEnergyProvider.PLAYER_ENERGY)
-                    .ifPresent(data -> syncEnergyToClient(serverPlayer, data));
+            PlayerEnergyData data = PlayerEnergyProvider.get(serverPlayer);
+            if (data != null) {
+                syncEnergyToClient(serverPlayer, data);
+            }
         }
     }
 
@@ -533,7 +585,7 @@ public final class PlayerEnergyManager {
             boolean force,
             boolean instantVisual
     ) {
-        long gameTime = player.serverLevel().getGameTime();
+        long gameTime = player.level().getGameTime();
         SyncState previous = SYNC_STATES.get(player.getUUID());
         boolean maxChanged = previous == null || previous.maxEnergy != energyData.getMaxEnergy();
         boolean energyChanged = previous == null || previous.energy != energyData.getEnergy();
@@ -575,7 +627,7 @@ public final class PlayerEnergyManager {
             long gameTime
     ) {
         boolean movementBlocked = energyData.getEnergy() < SPRINT_ENERGY_THRESHOLD
-                || player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get());
+                || MixEnergyEffects.isFatigued(player);
         if (!movementBlocked) {
             float movementCost = getMovementCost(player);
             if (movementCost > 0.0f) {

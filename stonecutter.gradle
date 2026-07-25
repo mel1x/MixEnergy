@@ -1,0 +1,43 @@
+plugins {
+    id 'dev.kikugie.stonecutter'
+}
+
+// The version whose state ./src currently holds. Switch it with the
+// "Set active project to <version>" tasks in the "stonecutter" task group.
+stonecutter.active '1.20.1-forge'
+
+def nodePaths = { String task ->
+    stonecutter.versions.collect { ":${it.project}:${task}" }
+}
+
+tasks.register('buildAll') {
+    group = 'mixenergy'
+    description = 'Builds the mod jar for every registered Minecraft version.'
+    dependsOn nodePaths('build')
+}
+
+tasks.register('compileAll') {
+    group = 'mixenergy'
+    description = 'Compiles every registered Minecraft version without packaging jars.'
+    dependsOn nodePaths('compileJava')
+}
+
+tasks.register('collectJars', Copy) {
+    group = 'mixenergy'
+    description = 'Copies every built jar into ./build/libs for release upload.'
+    dependsOn tasks.named('buildAll')
+
+    // Start from an empty directory so a jar left over from an earlier version list
+    // cannot be uploaded by mistake.
+    doFirst {
+        delete fileTree(layout.buildDirectory.dir('libs')) {
+            include '*.jar'
+        }
+    }
+
+    from(stonecutter.versions.collect { file("versions/${it.project}/build/libs") }) {
+        include '*.jar'
+        exclude '*-sources.jar'
+    }
+    into layout.buildDirectory.dir('libs')
+}

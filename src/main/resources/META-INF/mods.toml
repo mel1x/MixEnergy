@@ -27,13 +27,13 @@ description='''${mod_description}'''
 [[dependencies.${mod_id}]]
     modId="combatroll"
     mandatory=false
-    versionRange="[1.0.0,)"
+    versionRange="${combatroll_range}"
     ordering="AFTER"
     side="BOTH"
 
 [[dependencies.${mod_id}]]
     modId="bettercombat"
     mandatory=false
-    versionRange="[1.8.0,2.0.0)"
+    versionRange="${bettercombat_range}"
     ordering="AFTER"
     side="BOTH"

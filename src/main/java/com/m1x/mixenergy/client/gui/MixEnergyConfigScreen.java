@@ -1,19 +1,33 @@
 package com.m1x.mixenergy.client.gui;
 
+import com.m1x.mixenergy.MixEnergy;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import net.minecraft.ChatFormatting;
+// GuiGraphics was renamed to GuiGraphicsExtractor in 26.2, when screen drawing became a
+// two-step extract-then-render pass.
+//? if <26 {
 import net.minecraft.client.gui.GuiGraphics;
+//?} else {
+/*import net.minecraft.client.gui.GuiGraphicsExtractor;
+*///?}
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
+//? if forge {
 import net.minecraftforge.client.ConfigScreenHandler;
-import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.ModLoadingContext;
+//?} else {
+/*import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.neoforged.neoforge.common.ModConfigSpec.BooleanValue;
+*///?}
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,7 +39,10 @@ public class MixEnergyConfigScreen extends Screen {
     private static final int PANEL_MAX_WIDTH = 440;
     private static final int ROW_HEIGHT = 16;
     private static final double MAX_REGEN_SPEED_MULTIPLIER = 5.0;
-    private static final int COLOR_PANEL = 0xD914181E;
+    // Fully opaque: the panel used to let a sliver of the world (blurred, when the
+    // "Menu Background Blurriness" option is on) show through its ~85% alpha, which
+    // softened the edges of the text drawn on top of it.
+    private static final int COLOR_PANEL = 0xFF14181E;
     private static final int COLOR_ROW = 0xA6222830;
     private static final int COLOR_ROW_ALT = 0xA61D232A;
     private static final int COLOR_BORDER = 0xFF52636A;
@@ -37,7 +54,7 @@ public class MixEnergyConfigScreen extends Screen {
     private final List<AbstractWidget> gameplayWidgets = new ArrayList<>();
     private final List<String> gameplayLabelKeys = new ArrayList<>();
     private final List<String> gameplayDescriptionKeys = new ArrayList<>();
-    private final Map<Button, ForgeConfigSpec.BooleanValue> sourceButtons = new LinkedHashMap<>();
+    private final Map<Button, BooleanValue> sourceButtons = new LinkedHashMap<>();
     private final Map<Button, PositionChoice> positionButtons = new LinkedHashMap<>();
 
     private Tab activeTab = Tab.INTERFACE;
@@ -228,7 +245,7 @@ public class MixEnergyConfigScreen extends Screen {
             int row,
             String labelKey,
             String descriptionKey,
-            ForgeConfigSpec.BooleanValue value
+            BooleanValue value
     ) {
         gameplayLabelKeys.add(labelKey);
         gameplayDescriptionKeys.add(descriptionKey);
@@ -256,7 +273,7 @@ public class MixEnergyConfigScreen extends Screen {
         return contentTop + 10 + row * ROW_HEIGHT;
     }
 
-    private Component sourceState(ForgeConfigSpec.BooleanValue value) {
+    private Component sourceState(BooleanValue value) {
         if (remoteServer) {
             return Component.translatable("mixenergy.config.server_controlled")
                     .withStyle(ChatFormatting.GRAY);
@@ -317,21 +334,52 @@ public class MixEnergyConfigScreen extends Screen {
         regenSpeedSlider.setConfigValue(1.0);
     }
 
+    // Screen#render was replaced by extractRenderState in 26.2: the screen now records
+    // what to draw and the GUI renderer submits it later in the frame.
+    //? if <26 {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    //?} else {
+    /*@Override
+    public void extractRenderState(
+            GuiGraphicsExtractor graphics,
+            int mouseX,
+            int mouseY,
+            float partialTick
+    ) {
+    *///?}
+        // Below 1.21.6 this screen still chooses its own background, so it uses
+        // renderTransparentBackground: a plain full-screen dim with no world blur, meant
+        // for exactly this "one screen layered over the game" case. The alternative,
+        // renderBackground, triggers the "Menu Background Blurriness" shader, which then
+        // shows through this screen's own (opaque) panel at the edges and, on some
+        // versions, has been documented to corrupt state for content drawn after it (see
+        // the "Neo:" fix in Screen#renderBlurredBackground for NeoForge issue #1504).
+        //
+        // From 1.21.6 the vanilla wrapper that calls this method (renderWithTooltip, later
+        // renderWithTooltipAndSubtitles, and extractRenderStateWithTooltipAndSubtitles on
+        // 26.2) already calls renderBackground/extractBackground itself before invoking
+        // this method - calling it again here throws "Can only blur once per frame" - so
+        // for those versions the world behind is blurred regardless of what happens here.
+        // renderTransparentBackground was only added in 1.20.2, so 1.20.1 uses its own
+        // renderBackground - which predates the blur entirely and is therefore safe.
+        //? if <1.20.2 {
         renderBackground(graphics);
+        //?} elif <1.21.6 {
+        /*renderTransparentBackground(graphics);
+        *///?}
 
         graphics.fill(panelX - 6, 36, panelX + panelWidth + 6, height - 32, COLOR_PANEL);
         graphics.fill(panelX - 6, 36, panelX + panelWidth + 6, 37, COLOR_ACCENT);
 
-        graphics.drawCenteredString(font, title, width / 2, 12, COLOR_PRIMARY_TEXT);
+        centeredText(graphics, title, width / 2, 12, COLOR_PRIMARY_TEXT);
         Component subtitle = Component.translatable(
                 remoteServer
                         ? "mixenergy.config.subtitle.multiplayer"
                         : "mixenergy.config.subtitle.local"
         );
-        graphics.drawCenteredString(
-                font,
+        centeredText(
+                graphics,
                 font.plainSubstrByWidth(subtitle.getString(), width - 24),
                 width / 2,
                 25,
@@ -346,7 +394,22 @@ public class MixEnergyConfigScreen extends Screen {
 
         graphics.fill(panelX, height - 32, panelX + panelWidth, height - 31, COLOR_BORDER);
 
-        super.render(graphics, mouseX, mouseY, partialTick);
+        // Draw the widgets by walking the list directly instead of calling super. On
+        // Minecraft 1.20.2 - 1.21.5, Screen#render paints the background itself before
+        // iterating the widgets, so calling super here would re-run the background - and
+        // with it the "Menu Background Blurriness" shader - *after* the panel and text
+        // above were already drawn, blurring them while leaving the widgets that follow
+        // sharp. This loop is exactly what Screen#render does minus that background call,
+        // and it behaves identically on every supported version.
+        //? if <26 {
+        for (Renderable renderable : renderables) {
+            renderable.render(graphics, mouseX, mouseY, partialTick);
+        }
+        //?} else {
+        /*for (Renderable renderable : renderables) {
+            renderable.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        }
+        *///?}
 
         if (activeTab == Tab.INTERFACE) {
             renderPositionArrows(graphics);
@@ -355,19 +418,51 @@ public class MixEnergyConfigScreen extends Screen {
         }
     }
 
+    // The text drawing methods were renamed in 26.2: drawCenteredString became
+    // centeredText and drawString became text. These wrappers keep the call sites shared.
+    //? if <26 {
+    private void centeredText(GuiGraphics graphics, Component text, int x, int y, int color) {
+        graphics.drawCenteredString(font, text, x, y, color);
+    }
+
+    private void centeredText(GuiGraphics graphics, String text, int x, int y, int color) {
+        graphics.drawCenteredString(font, text, x, y, color);
+    }
+
+    private void text(GuiGraphics graphics, String value, int x, int y, int color, boolean shadow) {
+        graphics.drawString(font, value, x, y, color, shadow);
+    }
+    //?} else {
+    /*private void centeredText(GuiGraphicsExtractor graphics, Component text, int x, int y, int color) {
+        graphics.centeredText(font, text, x, y, color);
+    }
+
+    private void centeredText(GuiGraphicsExtractor graphics, String text, int x, int y, int color) {
+        graphics.centeredText(font, text, x, y, color);
+    }
+
+    private void text(GuiGraphicsExtractor graphics, String value, int x, int y, int color, boolean shadow) {
+        graphics.text(font, value, x, y, color, shadow);
+    }
+    *///?}
+
+    //? if <26 {
     private void renderInterfaceTab(GuiGraphics graphics) {
+    //?} else {
+    /*private void renderInterfaceTab(GuiGraphicsExtractor graphics) {
+    *///?}
         Component description = Component.translatable(
                 "mixenergy.config.position.description"
         );
-        graphics.drawCenteredString(
-                font,
+        centeredText(
+                graphics,
                 font.plainSubstrByWidth(description.getString(), panelWidth - 24),
                 width / 2,
                 contentTop + 2,
                 COLOR_SECONDARY_TEXT
         );
-        graphics.drawCenteredString(
-                font,
+        centeredText(
+                graphics,
                 positionName(MixEnergyConfig.ENERGY_BAR_POSITION.get()),
                 width / 2,
                 contentTop + 91,
@@ -376,7 +471,11 @@ public class MixEnergyConfigScreen extends Screen {
         renderPositionPreview(graphics);
     }
 
+    //? if <26 {
     private void renderPositionPreview(GuiGraphics graphics) {
+    //?} else {
+    /*private void renderPositionPreview(GuiGraphicsExtractor graphics) {
+    *///?}
         int previewWidth = Math.min(150, panelWidth - 40);
         int previewHeight = 32;
         int previewX = width / 2 - previewWidth / 2;
@@ -446,7 +545,11 @@ public class MixEnergyConfigScreen extends Screen {
         );
     }
 
+    //? if <26 {
     private void renderPositionArrows(GuiGraphics graphics) {
+    //?} else {
+    /*private void renderPositionArrows(GuiGraphicsExtractor graphics) {
+    *///?}
         MixEnergyConfig.EnergyBarPosition selected =
                 MixEnergyConfig.ENERGY_BAR_POSITION.get();
         positionButtons.forEach((button, choice) -> {
@@ -492,7 +595,11 @@ public class MixEnergyConfigScreen extends Screen {
     }
 
     private static void drawSelectionBorder(
+            //? if <26 {
             GuiGraphics graphics,
+            //?} else {
+            /*GuiGraphicsExtractor graphics,
+            *///?}
             Button button,
             int color
     ) {
@@ -507,7 +614,11 @@ public class MixEnergyConfigScreen extends Screen {
     }
 
     private static void drawThickLine(
+            //? if <26 {
             GuiGraphics graphics,
+            //?} else {
+            /*GuiGraphicsExtractor graphics,
+            *///?}
             int startX,
             int startY,
             int endX,
@@ -538,14 +649,18 @@ public class MixEnergyConfigScreen extends Screen {
         }
     }
 
+    //? if <26 {
     private void renderGameplayTab(GuiGraphics graphics) {
+    //?} else {
+    /*private void renderGameplayTab(GuiGraphicsExtractor graphics) {
+    *///?}
         Component sectionDescription = Component.translatable(
                 remoteServer
                         ? "mixenergy.config.server.description"
                         : "mixenergy.config.sources.description"
         );
-        graphics.drawString(
-                font,
+        text(
+                graphics,
                 font.plainSubstrByWidth(sectionDescription.getString(), panelWidth - 16),
                 panelX + 8,
                 contentTop,
@@ -566,8 +681,8 @@ public class MixEnergyConfigScreen extends Screen {
 
             Component label = Component.translatable(gameplayLabelKeys.get(row));
             String clipped = font.plainSubstrByWidth(label.getString(), labelMaxWidth);
-            graphics.drawString(
-                    font,
+            text(
+                    graphics,
                     clipped,
                     panelX + 8,
                     y + 4,
@@ -578,7 +693,15 @@ public class MixEnergyConfigScreen extends Screen {
         }
     }
 
+    //? if <26 {
     private void renderGameplayTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+    //?} else {
+    /*private void renderGameplayTooltip(
+            GuiGraphicsExtractor graphics,
+            int mouseX,
+            int mouseY
+    ) {
+    *///?}
         if (mouseX < panelX || mouseX >= panelX + panelWidth - 100) {
             return;
         }
@@ -589,26 +712,50 @@ public class MixEnergyConfigScreen extends Screen {
             return;
         }
 
+        // Tooltips became a deferred, once-per-frame request in 1.21.6.
+        //? if <1.21.6 {
         graphics.renderTooltip(
                 font,
                 Component.translatable(gameplayDescriptionKeys.get(row)),
                 mouseX,
                 mouseY
         );
+        //?} else {
+        /*graphics.setTooltipForNextFrame(
+                font,
+                Component.translatable(gameplayDescriptionKeys.get(row)),
+                mouseX,
+                mouseY
+        );
+        *///?}
     }
 
     @Override
     public void onClose() {
+        // Minecraft#setScreen was renamed to setScreenAndShow in 26.2.
+        //? if <26 {
         minecraft.setScreen(parentScreen);
+        //?} else {
+        /*minecraft.setScreenAndShow(parentScreen);
+        *///?}
     }
 
     public static void registerConfigScreen() {
+        //? if forge {
         ModLoadingContext.get().registerExtensionPoint(
                 ConfigScreenHandler.ConfigScreenFactory.class,
                 () -> new ConfigScreenHandler.ConfigScreenFactory(
                         (minecraft, parentScreen) -> new MixEnergyConfigScreen(parentScreen)
                 )
         );
+        //?} else {
+        /*ModList.get().getModContainerById(MixEnergy.MOD_ID).ifPresent(container ->
+                container.registerExtensionPoint(
+                        IConfigScreenFactory.class,
+                        (modContainer, parentScreen) -> new MixEnergyConfigScreen(parentScreen)
+                )
+        );
+        *///?}
     }
 
     private enum Tab {

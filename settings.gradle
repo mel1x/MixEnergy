@@ -5,10 +5,48 @@ pluginManagement {
             name = 'MinecraftForge'
             url = 'https://maven.minecraftforge.net/'
         }
+        maven {
+            name = 'NeoForged'
+            url = 'https://maven.neoforged.net/releases'
+        }
         maven { url = 'https://maven.parchmentmc.org' }
     }
 }
 
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.7.0'
+    id 'dev.kikugie.stonecutter' version '0.7.11'
 }
+
+// One source tree in ./src is compiled once per entry below. Stonecutter rewrites the
+// tree for the active version and generates the remaining ones into
+// versions/<project>/build/chiseledSrc, so every target ships from the same sources.
+//
+// The first argument is the subproject directory under versions/, the second is the
+// Minecraft version used by "//? if <predicate>" comments and by stonecutter.eval(..).
+stonecutter {
+    // Stonecutter defaults to the Kotlin DSL; this project stays on Groovy.
+    kotlinController = false
+    centralScript = 'build.gradle'
+
+    create(rootProject) {
+        version '1.20.1-forge', '1.20.1'
+        version '1.20.2-forge', '1.20.2'
+        version '1.20.4-forge', '1.20.4'
+        version '1.20.6-forge', '1.20.6'
+        version '1.21.1-neoforge', '1.21.1'
+        version '1.21.3-neoforge', '1.21.3'
+        version '1.21.4-neoforge', '1.21.4'
+        version '1.21.5-neoforge', '1.21.5'
+        version '1.21.6-neoforge', '1.21.6'
+        version '1.21.8-neoforge', '1.21.8'
+        version '1.21.10-neoforge', '1.21.10'
+        version '1.21.11-neoforge', '1.21.11'
+        version '26.2-neoforge', '26.2'
+
+        // The state committed to git. Run "gradlew stonecutterReset" before committing.
+        vcsVersion = '1.20.1-forge'
+    }
+}
+
+rootProject.name = 'MixEnergy'

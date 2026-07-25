@@ -2,9 +2,15 @@ package com.m1x.mixenergy.common.config;
 
 import com.electronwill.nightconfig.core.file.CommentedFileConfig;
 import com.mojang.logging.LogUtils;
+//? if forge {
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.fml.loading.FMLPaths;
+//?} else {
+/*import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.fml.loading.FMLPaths;
+*///?}
 import org.slf4j.Logger;
 
 import java.nio.file.Files;
@@ -38,7 +44,12 @@ final class MixEnergyConfigMigration {
             boolean changed = migrateGameplayValues(commonConfig);
             changed |= migrateRegenCooldown(commonConfig);
 
+            // The dist field became a getter in the 1.21.9 loader.
+            //? if forge || <1.21.9 {
             if (FMLEnvironment.dist == Dist.CLIENT && commonConfig.contains(LEGACY_POSITION_KEY)) {
+            //?} else {
+            /*if (FMLEnvironment.getDist() == Dist.CLIENT && commonConfig.contains(LEGACY_POSITION_KEY)) {
+            *///?}
                 Object legacyPosition = commonConfig.get(LEGACY_POSITION_KEY);
                 migrateClientPosition(legacyPosition);
             }

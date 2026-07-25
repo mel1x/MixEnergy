@@ -1,44 +1,70 @@
 package com.m1x.mixenergy.common.config;
 
+//? if forge {
 import net.minecraftforge.common.ForgeConfigSpec;
+import net.minecraftforge.common.ForgeConfigSpec.BooleanValue;
+import net.minecraftforge.common.ForgeConfigSpec.Builder;
+import net.minecraftforge.common.ForgeConfigSpec.DoubleValue;
+import net.minecraftforge.common.ForgeConfigSpec.EnumValue;
+import net.minecraftforge.common.ForgeConfigSpec.IntValue;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.config.ModConfig;
+//?} else {
+/*import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.neoforge.common.ModConfigSpec.BooleanValue;
+import net.neoforged.neoforge.common.ModConfigSpec.Builder;
+import net.neoforged.neoforge.common.ModConfigSpec.DoubleValue;
+import net.neoforged.neoforge.common.ModConfigSpec.EnumValue;
+import net.neoforged.neoforge.common.ModConfigSpec.IntValue;
+*///?}
 
+/**
+ * Config definition shared by every supported version. Forge calls the spec type
+ * {@code ForgeConfigSpec} and NeoForge calls it {@code ModConfigSpec}; the nested value
+ * types are identical, so they are imported directly and used unqualified below.
+ */
 public final class MixEnergyConfig {
     public static final String COMMON_FILE_NAME = "mixenergy-common.toml";
     public static final String CLIENT_FILE_NAME = "mixenergy-client.toml";
 
+    //? if forge {
     public static final ForgeConfigSpec COMMON_SPEC;
     public static final ForgeConfigSpec CLIENT_SPEC;
+    //?} else {
+    /*public static final ModConfigSpec COMMON_SPEC;
+    public static final ModConfigSpec CLIENT_SPEC;
+    *///?}
 
-    public static final ForgeConfigSpec.DoubleValue DEFAULT_MAX_ENERGY;
-    public static final ForgeConfigSpec.IntValue ENERGY_REGEN_COOLDOWN_TICKS;
+    public static final DoubleValue DEFAULT_MAX_ENERGY;
+    public static final IntValue ENERGY_REGEN_COOLDOWN_TICKS;
 
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_SPRINTING;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_SWIMMING;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_BREAKING_BLOCKS;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_PLACING_BLOCKS;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_ATTACKS;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_JUMPING;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_COMBAT_ROLL;
-    public static final ForgeConfigSpec.BooleanValue ENERGY_COST_FOR_BETTER_COMBAT;
+    public static final BooleanValue ENERGY_COST_FOR_SPRINTING;
+    public static final BooleanValue ENERGY_COST_FOR_SWIMMING;
+    public static final BooleanValue ENERGY_COST_FOR_BREAKING_BLOCKS;
+    public static final BooleanValue ENERGY_COST_FOR_PLACING_BLOCKS;
+    public static final BooleanValue ENERGY_COST_FOR_ATTACKS;
+    public static final BooleanValue ENERGY_COST_FOR_JUMPING;
+    public static final BooleanValue ENERGY_COST_FOR_COMBAT_ROLL;
+    public static final BooleanValue ENERGY_COST_FOR_BETTER_COMBAT;
 
-    public static final ForgeConfigSpec.DoubleValue SPRINT_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue FAST_SWIMMING_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue BLOCK_BREAK_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue BLOCK_PLACE_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue ATTACK_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue JUMP_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue COMBAT_ROLL_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue BETTER_COMBAT_ATTACK_ENERGY_COST;
-    public static final ForgeConfigSpec.DoubleValue BASE_ENERGY_REGEN_RATE;
-    public static final ForgeConfigSpec.DoubleValue MAX_ENERGY_REGEN_RATE;
-    public static final ForgeConfigSpec.DoubleValue ENERGY_REGEN_SPEED_MULTIPLIER;
+    public static final DoubleValue SPRINT_ENERGY_COST;
+    public static final DoubleValue FAST_SWIMMING_ENERGY_COST;
+    public static final DoubleValue BLOCK_BREAK_ENERGY_COST;
+    public static final DoubleValue BLOCK_PLACE_ENERGY_COST;
+    public static final DoubleValue ATTACK_ENERGY_COST;
+    public static final DoubleValue JUMP_ENERGY_COST;
+    public static final DoubleValue COMBAT_ROLL_ENERGY_COST;
+    public static final DoubleValue BETTER_COMBAT_ATTACK_ENERGY_COST;
+    public static final DoubleValue BASE_ENERGY_REGEN_RATE;
+    public static final DoubleValue MAX_ENERGY_REGEN_RATE;
+    public static final DoubleValue ENERGY_REGEN_SPEED_MULTIPLIER;
 
-    public static final ForgeConfigSpec.EnumValue<EnergyBarPosition> ENERGY_BAR_POSITION;
+    public static final EnumValue<EnergyBarPosition> ENERGY_BAR_POSITION;
 
     static {
-        ForgeConfigSpec.Builder commonBuilder = new ForgeConfigSpec.Builder();
+        Builder commonBuilder = new Builder();
         commonBuilder
                 .comment("MixEnergy gameplay settings. These values are authoritative on the server.")
                 .push("general");
@@ -152,7 +178,7 @@ public final class MixEnergyConfig {
         commonBuilder.pop();
         COMMON_SPEC = commonBuilder.build();
 
-        ForgeConfigSpec.Builder clientBuilder = new ForgeConfigSpec.Builder();
+        Builder clientBuilder = new Builder();
         clientBuilder
                 .comment("MixEnergy client settings. These values only affect the local HUD.")
                 .push("hud");
@@ -168,12 +194,20 @@ public final class MixEnergyConfig {
     private MixEnergyConfig() {
     }
 
+    //? if forge {
     public static void register() {
         MixEnergyConfigMigration.migrate();
         ModLoadingContext context = ModLoadingContext.get();
         context.registerConfig(ModConfig.Type.COMMON, COMMON_SPEC, COMMON_FILE_NAME);
         context.registerConfig(ModConfig.Type.CLIENT, CLIENT_SPEC, CLIENT_FILE_NAME);
     }
+    //?} else {
+    /*public static void register(ModContainer container) {
+        MixEnergyConfigMigration.migrate();
+        container.registerConfig(ModConfig.Type.COMMON, COMMON_SPEC, COMMON_FILE_NAME);
+        container.registerConfig(ModConfig.Type.CLIENT, CLIENT_SPEC, CLIENT_FILE_NAME);
+    }
+    *///?}
 
     public static void saveCommon() {
         COMMON_SPEC.save();

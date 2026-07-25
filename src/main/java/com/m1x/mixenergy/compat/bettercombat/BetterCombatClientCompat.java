@@ -1,5 +1,7 @@
 package com.m1x.mixenergy.compat.bettercombat;
 
+// Compiled only for targets whose gradle.properties declares deps_bettercombat.
+//? if bettercombat {
 import com.m1x.mixenergy.network.EnergyActionPacket;
 import com.m1x.mixenergy.network.NetworkHandler;
 import net.bettercombat.api.client.BetterCombatClientEvents;
@@ -19,9 +21,10 @@ public final class BetterCombatClientCompat {
         registered = true;
 
         BetterCombatClientEvents.ATTACK_START.register((player, attackHand) ->
-                NetworkHandler.INSTANCE.sendToServer(new EnergyActionPacket(
+                NetworkHandler.sendToServer(new EnergyActionPacket(
                         EnergyActionPacket.ActionType.BETTER_COMBAT_ATTACK_START
                 ))
         );
     }
 }
+//?}

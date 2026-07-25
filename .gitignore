@@ -20,6 +20,13 @@ build
 # other
 eclipse
 run
+run-data
+run-server
+
+# Stonecutter generates the per-version subprojects; only their gradle.properties
+# is tracked, everything else under versions/ is build output.
+versions/*/src
+versions/*/.gradle
 
 # Files from Forge MDK
 forge*changelog.txt

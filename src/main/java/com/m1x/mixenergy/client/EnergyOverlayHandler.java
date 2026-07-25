@@ -1,27 +1,67 @@
 package com.m1x.mixenergy.client;
 
+import com.m1x.mixenergy.MixEnergy;
 import com.m1x.mixenergy.common.config.MixEnergyConfig;
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import com.m1x.mixenergy.registry.MixEnergyEffects;
-import com.mojang.blaze3d.systems.RenderSystem;
+// Util moved from the root package into net.minecraft.util in 1.21.11.
+//? if <1.21.11 {
 import net.minecraft.Util;
+//?} else {
+/*import net.minecraft.util.Util;
+*///?}
 import net.minecraft.client.Minecraft;
+// GuiGraphics was renamed to GuiGraphicsExtractor in 26.2, when GUI drawing became a
+// two-step extract-then-render pass. The drawing calls this class uses are unchanged.
+//? if <26 {
 import net.minecraft.client.gui.GuiGraphics;
+//?} else {
+/*import net.minecraft.client.gui.GuiGraphicsExtractor;
+*///?}
+//? if <1.21.11 {
 import net.minecraft.resources.ResourceLocation;
+//?} else {
+/*import net.minecraft.resources.Identifier;
+*///?}
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
+//? if forge {
 import net.minecraftforge.api.distmarker.Dist;
+// Forge replaced the named-overlay event with a LayeredDraw the mod registers into once,
+// in the same 1.20.5 release that reworked the vanilla GUI rendering pipeline.
+//? if <1.20.5 {
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
+//?}
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+//?} else {
+/*import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
+import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
+*///?}
+//? if <1.21.2 {
+import com.mojang.blaze3d.systems.RenderSystem;
+//?} elif <1.21.6 {
+/*import net.minecraft.client.renderer.RenderType;
+*///?} else {
+/*import net.minecraft.client.renderer.RenderPipelines;
+*///?}
 
-@Mod.EventBusSubscriber(modid = "mixenergy", value = Dist.CLIENT)
+//? if forge {
+@Mod.EventBusSubscriber(modid = MixEnergy.MOD_ID, value = Dist.CLIENT)
+//?} else {
+/*@EventBusSubscriber(modid = MixEnergy.MOD_ID, value = Dist.CLIENT)
+*///?}
 public final class EnergyOverlayHandler {
+    //? if <1.21.11 {
     private static final ResourceLocation CENTER =
             texture("textures/gui/energy_bar/center.png");
     private static final ResourceLocation ENERGY_BAR_LEFT =
@@ -41,6 +81,27 @@ public final class EnergyOverlayHandler {
     private static final ResourceLocation RIGHT_FRAME_FULL =
             texture("textures/gui/energy_bar/right_frame_full.png");
     private static final ResourceLocation[] CENTER_ANIMATION = new ResourceLocation[18];
+    //?} else {
+    /*private static final Identifier CENTER =
+            texture("textures/gui/energy_bar/center.png");
+    private static final Identifier ENERGY_BAR_LEFT =
+            texture("textures/gui/energy_bar/energy_bar_left.png");
+    private static final Identifier ENERGY_BAR_RIGHT =
+            texture("textures/gui/energy_bar/energy_bar_right.png");
+    private static final Identifier ENERGY_BAR_BG_LEFT =
+            texture("textures/gui/energy_bar/energy_bar_bg_left.png");
+    private static final Identifier ENERGY_BAR_BG_RIGHT =
+            texture("textures/gui/energy_bar/energy_bar_bg_right.png");
+    private static final Identifier LEFT_FRAME =
+            texture("textures/gui/energy_bar/left_frame.png");
+    private static final Identifier RIGHT_FRAME =
+            texture("textures/gui/energy_bar/right_frame.png");
+    private static final Identifier LEFT_FRAME_FULL =
+            texture("textures/gui/energy_bar/left_frame_full.png");
+    private static final Identifier RIGHT_FRAME_FULL =
+            texture("textures/gui/energy_bar/right_frame_full.png");
+    private static final Identifier[] CENTER_ANIMATION = new Identifier[18];
+    *///?}
 
     private static final int CENTER_WIDTH = 11;
     private static final int BAR_TEXTURE_WIDTH = 9;
@@ -50,7 +111,16 @@ public final class EnergyOverlayHandler {
     private static final int ANIMATION_FRAME_DURATION_MILLIS = 35;
     private static final int FADE_DELAY_MILLIS = 2000;
     private static final int FADE_TRANSITION_MILLIS = 260;
-    private static final int VISUAL_UPDATE_INTERVAL_TICKS = 4;
+    /**
+     * Time constant of the bar easing towards the value the client predicts. The bar is
+     * advanced once per frame rather than on a tick interval, so the motion stays smooth
+     * at any frame rate and a spent action reads on screen within roughly 200 ms.
+     */
+    private static final float VISUAL_RESPONSE_MILLIS = 70.0f;
+    /** Below this the bar is considered settled and is pinned to the predicted value. */
+    private static final float VISUAL_SETTLE_EPSILON = 0.01f;
+    /** Longest frame the bar is advanced by, so a stall does not make it jump. */
+    private static final long MAX_VISUAL_STEP_MILLIS = 250L;
 
     private static float energyValue = 27.0f;
     private static float displayedEnergyValue = 27.0f;
@@ -62,8 +132,8 @@ public final class EnergyOverlayHandler {
     private static float overlayAlpha;
     private static long lastEnergyChangeTime = Util.getMillis();
     private static long lastAlphaUpdateTime = Util.getMillis();
+    private static long lastVisualUpdateTime = Util.getMillis();
     private static long animationStartTime;
-    private static int visualUpdateTicker;
     private static boolean animating;
     private static boolean hasServerSnapshot;
 
@@ -78,9 +148,15 @@ public final class EnergyOverlayHandler {
     private EnergyOverlayHandler() {
     }
 
+    //? if <1.21.11 {
     private static ResourceLocation texture(String path) {
-        return new ResourceLocation("mixenergy", path);
+        return MixEnergy.id(path);
     }
+    //?} else {
+    /*private static Identifier texture(String path) {
+        return MixEnergy.id(path);
+    }
+    *///?}
 
     public static float getEnergyValue() {
         return energyValue;
@@ -117,7 +193,6 @@ public final class EnergyOverlayHandler {
                 || !hasServerSnapshot
                 || energyValue < PlayerEnergyManager.SPRINT_ENERGY_THRESHOLD) {
             displayedEnergyValue = energyValue;
-            visualUpdateTicker = 0;
         }
         hasServerSnapshot = true;
     }
@@ -128,42 +203,60 @@ public final class EnergyOverlayHandler {
         displayedEnergyValue = Math.min(displayedEnergyValue, maxEnergyValue);
     }
 
+    //? if forge {
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
+        tick();
+    }
+    //?} else {
+    /*@SubscribeEvent
+    public static void onClientTick(ClientTickEvent.Post event) {
+        tick();
+    }
+    *///?}
 
-        float trendPerTick = getClientEnergyTrend();
+    /**
+     * Carries the prediction forward by one tick. Continuous drain is predicted locally so
+     * the bar keeps moving between server updates instead of waiting for the next packet.
+     */
+    private static void tick() {
         projectedEnergyValue = Mth.clamp(
-                projectedEnergyValue + trendPerTick,
+                projectedEnergyValue + getClientEnergyTrend(),
                 0.0f,
                 maxEnergyValue
         );
-        if (++visualUpdateTicker < VISUAL_UPDATE_INTERVAL_TICKS) {
-            return;
-        }
-        visualUpdateTicker = 0;
+    }
+
+    /**
+     * Eases the drawn value towards the prediction. This runs per frame off the wall clock,
+     * so the bar moves at the display's refresh rate and closes any gap in a fixed amount
+     * of time no matter which direction it is in.
+     */
+    private static void advanceDisplayedEnergy() {
+        long now = Util.getMillis();
+        long elapsed = Math.min(MAX_VISUAL_STEP_MILLIS, Math.max(0L, now - lastVisualUpdateTime));
+        lastVisualUpdateTime = now;
 
         float difference = projectedEnergyValue - displayedEnergyValue;
-        float reconciliationDirection = trendPerTick != 0.0f
-                ? trendPerTick
-                : serverEnergyTrendPerTick;
-        if ((reconciliationDirection < 0.0f && difference > 0.0f)
-                || (reconciliationDirection > 0.0f && difference < 0.0f)) {
+        if (elapsed <= 0L) {
             return;
         }
-        if (Math.abs(difference) < 0.05f) {
+        if (Math.abs(difference) <= VISUAL_SETTLE_EPSILON) {
             displayedEnergyValue = projectedEnergyValue;
             return;
         }
 
-        float expectedStep = Math.abs(trendPerTick) * VISUAL_UPDATE_INTERVAL_TICKS;
-        float correctionStep = Math.abs(difference) * 0.5f;
+        // Fraction of the remaining gap to close this frame. Independent of frame time, so
+        // the bar takes the same wall-clock time to catch up at any frame rate: about 94%
+        // of the gap within 200 ms, and the rest lands shortly after.
+        float closedFraction = 1.0f - (float) Math.exp(-elapsed / VISUAL_RESPONSE_MILLIS);
         displayedEnergyValue = Mth.approach(
                 displayedEnergyValue,
                 projectedEnergyValue,
-                Math.max(0.05f, Math.max(expectedStep, correctionStep))
+                Math.abs(difference) * closedFraction
         );
     }
 
@@ -178,7 +271,7 @@ public final class EnergyOverlayHandler {
         if (gameMode != GameType.SURVIVAL && gameMode != GameType.ADVENTURE) {
             return 0.0f;
         }
-        if (player.hasEffect(MixEnergyEffects.MIX_ENERGY_SLOWNESS.get())) {
+        if (MixEnergyEffects.isFatigued(player)) {
             return Math.max(0.0f, serverEnergyTrendPerTick);
         }
         if (player.isInWater() && (player.isSwimming() || player.isSprinting())) {
@@ -190,12 +283,39 @@ public final class EnergyOverlayHandler {
         return Math.max(0.0f, serverEnergyTrendPerTick);
     }
 
+    // Forge 1.20.1 draws overlays through a named vanilla overlay fired every frame on the
+    // Forge event bus. Forge 1.20.5+ replaced that with a LayeredDraw the mod registers a
+    // layer into once (see ClientModEvents#onAddGuiOverlayLayers, forge-only), matching how
+    // NeoForge moved to named GUI layers fired every frame with the same hotbar identifier.
+    //? if forge {
+    //? if <1.20.5 {
     @SubscribeEvent
     public static void onRenderGameOverlay(RenderGuiOverlayEvent.Post event) {
         if (event.getOverlay() != VanillaGuiOverlay.HOTBAR.type()) {
             return;
         }
+        render(event.getGuiGraphics());
+    }
+    //?} else {
+    /*static void renderLayer(GuiGraphics graphics, float partialTick) {
+        render(graphics);
+    }
+    *///?}
+    //?} else {
+    /*@SubscribeEvent
+    public static void onRenderGuiLayer(RenderGuiLayerEvent.Post event) {
+        if (!VanillaGuiLayers.HOTBAR.equals(event.getName())) {
+            return;
+        }
+        render(event.getGuiGraphics());
+    }
+    *///?}
 
+    //? if <26 {
+    private static void render(GuiGraphics graphics) {
+    //?} else {
+    /*private static void render(GuiGraphicsExtractor graphics) {
+    *///?}
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
         if (player == null || minecraft.gameMode == null) {
@@ -207,12 +327,12 @@ public final class EnergyOverlayHandler {
             return;
         }
 
+        advanceDisplayedEnergy();
         updateAlpha();
         if (overlayAlpha <= 0.001f && energyValue > 0.0f) {
             return;
         }
 
-        GuiGraphics graphics = event.getGuiGraphics();
         int screenWidth = minecraft.getWindow().getGuiScaledWidth();
         int screenHeight = minecraft.getWindow().getGuiScaledHeight();
         int availableHalfWidth = Math.max(
@@ -255,8 +375,79 @@ public final class EnergyOverlayHandler {
         }
     }
 
-    private static void renderBar(
+    /**
+     * Draws one texture quad.
+     *
+     * <p>Up to 1.21.1 the fade is applied with a global shader colour; from 1.21.2 blit
+     * takes a render type and a per-call tint instead, and 1.21.6 replaced the render type
+     * with a render pipeline.
+     */
+    private static void drawTexture(
+            //? if <26 {
             GuiGraphics graphics,
+            //?} else {
+            /*GuiGraphicsExtractor graphics,
+            *///?}
+            //? if <1.21.11 {
+            ResourceLocation texture,
+            //?} else {
+            /*Identifier texture,
+            *///?}
+            int x,
+            int y,
+            int u,
+            int v,
+            int width,
+            int height,
+            int textureWidth,
+            int textureHeight
+    ) {
+        //? if <1.21.2 {
+        graphics.blit(texture, x, y, u, v, width, height, textureWidth, textureHeight);
+        //?} elif <1.21.6 {
+        /*graphics.blit(
+                RenderType::guiTextured,
+                texture,
+                x,
+                y,
+                (float) u,
+                (float) v,
+                width,
+                height,
+                textureWidth,
+                textureHeight,
+                overlayTint()
+        );
+        *///?} else {
+        /*graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                texture,
+                x,
+                y,
+                (float) u,
+                (float) v,
+                width,
+                height,
+                textureWidth,
+                textureHeight,
+                overlayTint()
+        );
+        *///?}
+    }
+
+    //? if >=1.21.2 {
+    /*private static int overlayTint() {
+        int alpha = Mth.clamp(Math.round(overlayAlpha * 255.0f), 0, 255);
+        return (alpha << 24) | 0x00FFFFFF;
+    }
+    *///?}
+
+    private static void renderBar(
+            //? if <26 {
+            GuiGraphics graphics,
+            //?} else {
+            /*GuiGraphicsExtractor graphics,
+            *///?}
             int startX,
             int y,
             int halfWidth,
@@ -266,13 +457,16 @@ public final class EnergyOverlayHandler {
         int centerX = leftInnerX + halfWidth;
         int rightInnerX = centerX + CENTER_WIDTH;
         boolean fullEnergy = energyValue >= maxEnergyValue - 0.001f;
-        ResourceLocation leftFrame = fullEnergy ? LEFT_FRAME_FULL : LEFT_FRAME;
-        ResourceLocation rightFrame = fullEnergy ? RIGHT_FRAME_FULL : RIGHT_FRAME;
+        var leftFrame = fullEnergy ? LEFT_FRAME_FULL : LEFT_FRAME;
+        var rightFrame = fullEnergy ? RIGHT_FRAME_FULL : RIGHT_FRAME;
 
+        //? if <1.21.2 {
         RenderSystem.enableBlend();
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, overlayAlpha);
+        //?}
 
-        graphics.blit(
+        drawTexture(
+                graphics,
                 leftFrame,
                 startX,
                 y,
@@ -288,7 +482,8 @@ public final class EnergyOverlayHandler {
         renderCenter(graphics, centerX, y);
         renderTiled(graphics, ENERGY_BAR_BG_RIGHT, rightInnerX, y, halfWidth);
         renderTiled(graphics, ENERGY_BAR_RIGHT, rightInnerX, y, filledHalfWidth);
-        graphics.blit(
+        drawTexture(
+                graphics,
                 rightFrame,
                 rightInnerX + halfWidth,
                 y,
@@ -300,12 +495,18 @@ public final class EnergyOverlayHandler {
                 BAR_HEIGHT
         );
 
+        //? if <1.21.2 {
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
+        //?}
     }
 
     private static void renderLeftFill(
+            //? if <26 {
             GuiGraphics graphics,
+            //?} else {
+            /*GuiGraphicsExtractor graphics,
+            *///?}
             int centerX,
             int y,
             int width
@@ -315,7 +516,8 @@ public final class EnergyOverlayHandler {
         int x = centerX - width;
 
         if (partialWidth > 0) {
-            graphics.blit(
+            drawTexture(
+                    graphics,
                     ENERGY_BAR_LEFT,
                     x,
                     y,
@@ -330,7 +532,8 @@ public final class EnergyOverlayHandler {
         }
 
         for (int segment = 0; segment < fullSegments; segment++) {
-            graphics.blit(
+            drawTexture(
+                    graphics,
                     ENERGY_BAR_LEFT,
                     x + segment * BAR_TEXTURE_WIDTH,
                     y,
@@ -345,8 +548,16 @@ public final class EnergyOverlayHandler {
     }
 
     private static void renderTiled(
+            //? if <26 {
             GuiGraphics graphics,
+            //?} else {
+            /*GuiGraphicsExtractor graphics,
+            *///?}
+            //? if <1.21.11 {
             ResourceLocation texture,
+            //?} else {
+            /*Identifier texture,
+            *///?}
             int x,
             int y,
             int width
@@ -355,7 +566,8 @@ public final class EnergyOverlayHandler {
         int partialWidth = width % BAR_TEXTURE_WIDTH;
 
         for (int segment = 0; segment < fullSegments; segment++) {
-            graphics.blit(
+            drawTexture(
+                    graphics,
                     texture,
                     x + segment * BAR_TEXTURE_WIDTH,
                     y,
@@ -369,7 +581,8 @@ public final class EnergyOverlayHandler {
         }
 
         if (partialWidth > 0) {
-            graphics.blit(
+            drawTexture(
+                    graphics,
                     texture,
                     x + fullSegments * BAR_TEXTURE_WIDTH,
                     y,
@@ -383,8 +596,12 @@ public final class EnergyOverlayHandler {
         }
     }
 
+    //? if <26 {
     private static void renderCenter(GuiGraphics graphics, int x, int y) {
-        ResourceLocation texture = CENTER;
+    //?} else {
+    /*private static void renderCenter(GuiGraphicsExtractor graphics, int x, int y) {
+    *///?}
+        var texture = CENTER;
         if (animating) {
             long elapsed = Util.getMillis() - animationStartTime;
             int frame = (int) (elapsed / ANIMATION_FRAME_DURATION_MILLIS);
@@ -395,7 +612,8 @@ public final class EnergyOverlayHandler {
             }
         }
 
-        graphics.blit(
+        drawTexture(
+                graphics,
                 texture,
                 x,
                 y,

@@ -2,9 +2,6 @@ package com.m1x.mixenergy.common.entity;
 
 import com.m1x.mixenergy.common.PlayerEnergyManager;
 import com.m1x.mixenergy.registry.MixEnergyEntities;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -17,7 +14,21 @@ import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+//? if <1.20.2 {
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraftforge.network.NetworkHooks;
+//?} elif <1.21.6 {
+/*import net.minecraft.nbt.CompoundTag;
+*///?} else {
+/*import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+*///?}
+//? if >=1.21.2 {
+/*import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
+*///?}
 
 import java.util.List;
 
@@ -53,10 +64,18 @@ public class EnergyOrbEntity extends Entity {
         setEnergyAmount(energyAmount);
     }
 
+    // Synched data moved from a no-argument method to a builder in 1.20.5.
+    //? if <1.20.5 {
     @Override
     protected void defineSynchedData() {
         entityData.define(ENERGY_AMOUNT, BASE_ENERGY_AMOUNT);
     }
+    //?} else {
+    /*@Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(ENERGY_AMOUNT, BASE_ENERGY_AMOUNT);
+    }
+    *///?}
 
     @Override
     public void tick() {
@@ -206,6 +225,18 @@ public class EnergyOrbEntity extends Entity {
         return false;
     }
 
+    // Entity#hurtServer replaced the protected damage hook and is abstract from 1.21.2.
+    // The orb has no health, so every damage source is ignored.
+    //? if >=1.21.2 {
+    /*@Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
+        return false;
+    }
+    *///?}
+
+    // The CompoundTag getters started returning Optional in 1.21.5, and entity NBT was
+    // replaced by the ValueInput/ValueOutput abstraction in 1.21.6.
+    //? if <1.21.5 {
     @Override
     protected void readAdditionalSaveData(CompoundTag tag) {
         age = tag.getInt("Age");
@@ -219,9 +250,39 @@ public class EnergyOrbEntity extends Entity {
         tag.putInt("Age", age);
         tag.putFloat("EnergyAmount", getEnergyAmount());
     }
+    //?} elif <1.21.6 {
+    /*@Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        age = tag.getIntOr("Age", 0);
+        setEnergyAmount(tag.getFloatOr("EnergyAmount", BASE_ENERGY_AMOUNT));
+    }
 
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        tag.putInt("Age", age);
+        tag.putFloat("EnergyAmount", getEnergyAmount());
+    }
+    *///?} else {
+    /*@Override
+    protected void readAdditionalSaveData(ValueInput input) {
+        age = input.getIntOr("Age", 0);
+        setEnergyAmount(input.getFloatOr("EnergyAmount", BASE_ENERGY_AMOUNT));
+    }
+
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+        output.putInt("Age", age);
+        output.putFloat("EnergyAmount", getEnergyAmount());
+    }
+    *///?}
+
+    // Forge needed NetworkHooks to attach the synched data to the spawn packet; it was
+    // removed in Forge 48 (Minecraft 1.20.2), from which point the vanilla spawn packet
+    // carries it and no override is needed at all.
+    //? if <1.20.2 {
     @Override
     public Packet<ClientGamePacketListener> getAddEntityPacket() {
         return NetworkHooks.getEntitySpawningPacket(this);
     }
+    //?}
 }
