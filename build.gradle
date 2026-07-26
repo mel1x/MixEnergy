@@ -251,6 +251,17 @@ tasks.named('jar', Jar).configure {
     }
 }
 
+// Keep the per-target artifact in versions/<target>/build/libs and also publish a copy
+// to the root build/libs directory after a successful single-version build.
+tasks.named('build').configure {
+    doLast {
+        copy {
+            from tasks.named('jar', Jar).flatMap { it.archiveFile }
+            into rootProject.layout.buildDirectory.dir('libs')
+        }
+    }
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {

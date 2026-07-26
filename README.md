@@ -2,7 +2,7 @@
 
 The **MixEnergy Mod** introduces a unique mechanic to Minecraft: **player energy**. This energy system adds a new layer of challenge and strategy by making energy a consumable resource for various actions. 
 
-**Supported versions:** Minecraft 1.20.1–1.20.6 (Forge) and 1.21.1–1.21.11 plus 26.2 (NeoForge).
+**Supported versions:** Minecraft 1.20.1–1.20.6 (Forge) and 1.21.1–1.21.11 plus 26.1–26.2 (NeoForge).
 See [BUILDING.md](BUILDING.md) for the full target list and the multi-version build workflow.
 
 <p align="center">

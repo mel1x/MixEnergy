@@ -4,138 +4,6 @@
     {
       "type": "java",
       "request": "launch",
-      "name": "1.21.1-neoforge - Client",
-      "presentation": {
-        "group": "Mod Development - 1.21.1-neoforge",
-        "order": 0
-      },
-      "projectName": "1.21.1-neoforge",
-      "mainClass": "net.neoforged.devlaunch.Main",
-      "args": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\clientRunProgramArgs.txt"
-      ],
-      "vmArgs": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\clientRunVmArgs.txt",
-        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\bin\\main"
-      ],
-      "cwd": "${workspaceFolder}\\versions\\1.21.1-neoforge\\run",
-      "env": {},
-      "console": "internalConsole",
-      "shortenCommandLine": "none"
-    },
-    {
-      "type": "java",
-      "request": "launch",
-      "name": "1.21.1-neoforge - Server",
-      "presentation": {
-        "group": "Mod Development - 1.21.1-neoforge",
-        "order": 1
-      },
-      "projectName": "1.21.1-neoforge",
-      "mainClass": "net.neoforged.devlaunch.Main",
-      "args": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\serverRunProgramArgs.txt"
-      ],
-      "vmArgs": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\serverRunVmArgs.txt",
-        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\bin\\main"
-      ],
-      "cwd": "${workspaceFolder}\\versions\\1.21.1-neoforge\\run-server",
-      "env": {},
-      "console": "internalConsole",
-      "shortenCommandLine": "none"
-    },
-    {
-      "type": "java",
-      "request": "launch",
-      "name": "1.21.10-neoforge - Client",
-      "presentation": {
-        "group": "Mod Development - 1.21.10-neoforge",
-        "order": 0
-      },
-      "projectName": "1.21.10-neoforge",
-      "mainClass": "net.neoforged.devlaunch.Main",
-      "args": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\clientRunProgramArgs.txt"
-      ],
-      "vmArgs": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\clientRunVmArgs.txt",
-        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\bin\\main"
-      ],
-      "cwd": "${workspaceFolder}\\versions\\1.21.10-neoforge\\run",
-      "env": {},
-      "console": "internalConsole",
-      "shortenCommandLine": "none"
-    },
-    {
-      "type": "java",
-      "request": "launch",
-      "name": "1.21.10-neoforge - Server",
-      "presentation": {
-        "group": "Mod Development - 1.21.10-neoforge",
-        "order": 1
-      },
-      "projectName": "1.21.10-neoforge",
-      "mainClass": "net.neoforged.devlaunch.Main",
-      "args": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\serverRunProgramArgs.txt"
-      ],
-      "vmArgs": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\serverRunVmArgs.txt",
-        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\bin\\main"
-      ],
-      "cwd": "${workspaceFolder}\\versions\\1.21.10-neoforge\\run-server",
-      "env": {},
-      "console": "internalConsole",
-      "shortenCommandLine": "none"
-    },
-    {
-      "type": "java",
-      "request": "launch",
-      "name": "1.21.11-neoforge - Client",
-      "presentation": {
-        "group": "Mod Development - 1.21.11-neoforge",
-        "order": 0
-      },
-      "projectName": "1.21.11-neoforge",
-      "mainClass": "net.neoforged.devlaunch.Main",
-      "args": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\clientRunProgramArgs.txt"
-      ],
-      "vmArgs": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\clientRunVmArgs.txt",
-        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\bin\\main"
-      ],
-      "cwd": "${workspaceFolder}\\versions\\1.21.11-neoforge\\run",
-      "env": {},
-      "console": "internalConsole",
-      "shortenCommandLine": "none"
-    },
-    {
-      "type": "java",
-      "request": "launch",
-      "name": "1.21.11-neoforge - Server",
-      "presentation": {
-        "group": "Mod Development - 1.21.11-neoforge",
-        "order": 1
-      },
-      "projectName": "1.21.11-neoforge",
-      "mainClass": "net.neoforged.devlaunch.Main",
-      "args": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\serverRunProgramArgs.txt"
-      ],
-      "vmArgs": [
-        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\serverRunVmArgs.txt",
-        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\bin\\main"
-      ],
-      "cwd": "${workspaceFolder}\\versions\\1.21.11-neoforge\\run-server",
-      "env": {},
-      "console": "internalConsole",
-      "shortenCommandLine": "none"
-    },
-    {
-      "type": "java",
-      "request": "launch",
       "name": "1.21.3-neoforge - Client",
       "presentation": {
         "group": "Mod Development - 1.21.3-neoforge",
@@ -393,6 +261,138 @@
         "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\26.2-neoforge\\bin\\main"
       ],
       "cwd": "${workspaceFolder}\\versions\\26.2-neoforge\\run-server",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "1.21.1-neoforge - Client",
+      "presentation": {
+        "group": "Mod Development - 1.21.1-neoforge",
+        "order": 0
+      },
+      "projectName": "1.21.1-neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\versions\\1.21.1-neoforge\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "1.21.1-neoforge - Server",
+      "presentation": {
+        "group": "Mod Development - 1.21.1-neoforge",
+        "order": 1
+      },
+      "projectName": "1.21.1-neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\build\\moddev\\serverRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.1-neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\versions\\1.21.1-neoforge\\run-server",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "1.21.10-neoforge - Client",
+      "presentation": {
+        "group": "Mod Development - 1.21.10-neoforge",
+        "order": 0
+      },
+      "projectName": "1.21.10-neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\versions\\1.21.10-neoforge\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "1.21.10-neoforge - Server",
+      "presentation": {
+        "group": "Mod Development - 1.21.10-neoforge",
+        "order": 1
+      },
+      "projectName": "1.21.10-neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\build\\moddev\\serverRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.10-neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\versions\\1.21.10-neoforge\\run-server",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "1.21.11-neoforge - Client",
+      "presentation": {
+        "group": "Mod Development - 1.21.11-neoforge",
+        "order": 0
+      },
+      "projectName": "1.21.11-neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\versions\\1.21.11-neoforge\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "1.21.11-neoforge - Server",
+      "presentation": {
+        "group": "Mod Development - 1.21.11-neoforge",
+        "order": 1
+      },
+      "projectName": "1.21.11-neoforge",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\build\\moddev\\serverRunVmArgs.txt",
+        "-Dfml.modFolders\u003dmixenergy%%C:\\Users\\melix\\Desktop\\prog\\java\\MixEnergy\\versions\\1.21.11-neoforge\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\versions\\1.21.11-neoforge\\run-server",
       "env": {},
       "console": "internalConsole",
       "shortenCommandLine": "none"

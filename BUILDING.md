@@ -20,6 +20,8 @@ rewrites version-specific code before each compilation.
 | `1.21.8-neoforge` | 1.21.8 | NeoForge | 21.8.54 | 21 | `[1.21.7,1.21.9)` |
 | `1.21.10-neoforge` | 1.21.10 | NeoForge | 21.10.64 | 21 | `[1.21.9,1.21.11)` |
 | `1.21.11-neoforge` | 1.21.11 | NeoForge | 21.11.44 | 21 | `[1.21.11,1.21.12)` |
+| `26.1.1-neoforge` | 26.1.1 | NeoForge | 26.1.1.15-beta | 25 | `[26.1,26.1.2)` |
+| `26.1.2-neoforge` | 26.1.2 | NeoForge | 26.1.2.85 | 25 | `[26.1.2,26.2)` |
 | `26.2-neoforge` | 26.2 | NeoForge | 26.2.0.32-beta | 25 | `[26.2,26.3)` |
 
 Each row produces `mixenergy-<mod_version>+<mc>-<loader>.jar`.
@@ -74,7 +76,7 @@ targets are compiled against the Java version each Minecraft release ships to pl
 |---|---|
 | 17 | `1.20.1-forge` toolchain |
 | 21 | the Gradle daemon, and the `1.21.x` toolchains |
-| 25 | `26.2-neoforge` toolchain |
+| 25 | the `26.x` toolchains |
 
 The Gradle daemon runs on **Java 21**, pinned by `gradle/gradle-daemon-jvm.properties` so
 that it does not depend on `JAVA_HOME` or on a global `org.gradle.java.home`. The pin
@@ -103,6 +105,9 @@ Build or run a single version:
 ```bash
 ./gradlew :1.21.1-neoforge:build
 ```
+
+The single-version `build` task also copies its release jar into the root `build/libs`
+directory, while retaining the original under `versions/<target>/build/libs`.
 
 ```bash
 ./gradlew :1.21.1-neoforge:runClient
@@ -174,7 +179,7 @@ to load. We have found 10.0"*. The properties are therefore separate:
 - `neoforge_version_range` — the NeoForge dependency itself, e.g. `[21.11,)`.
 
 For reference, the mapping used here: NeoForge 21.0–21.3 → javafml 4, 21.4–21.5 → 6,
-21.6–21.8 → 7, 21.9–21.11 → 10, 26.2 → 11.
+21.6–21.8 → 7, 21.9–21.11 → 10, 26.1–26.2 → 11.
 
 `build.gradle` needs no change: it applies ForgeGradle for `loader=forge` targets and
 ModDevGradle for `loader=neoforge` targets, and reads everything else from properties.
@@ -255,8 +260,8 @@ off the compiled jars, so they are the version the change actually landed in.
 | 1.21.11 | `Util` moved to `net.minecraft.util` | `EnergyOverlayHandler` |
 | 1.21.11 | Numeric permission levels replaced by `PermissionSet` | `EnergyCommands` |
 | pack format 65 | `pack_format` / `supported_formats` replaced by `min_format` / `max_format`; the old spelling makes the game drop the mod's resources | `pack.mcmeta`, `build.gradle` |
-| 26.2 | `GuiGraphics` renamed to `GuiGraphicsExtractor` | `EnergyOverlayHandler`, `MixEnergyConfigScreen` |
-| 26.2 | `Screen#render` became `extractRenderState`; text helpers renamed | `MixEnergyConfigScreen` |
-| 1.21.6 | `renderWithTooltip`/`renderWithTooltipAndSubtitles` (and, from 26.2, `extractRenderStateWithTooltipAndSubtitles`) started calling `renderBackground`/`extractBackground` themselves before invoking the screen; calling it again crashes with "Can only blur once per frame" | `MixEnergyConfigScreen` |
-| 26.2 | `LightTexture` removed | `EnergyOrbRenderer` |
-| 26.2 | `BlockEvent.BreakEvent` became `BreakBlockEvent` | `PlayerEnergyManager` |
+| 26.1 | `GuiGraphics` renamed to `GuiGraphicsExtractor` | `EnergyOverlayHandler`, `MixEnergyConfigScreen` |
+| 26.1 | `Screen#render` became `extractRenderState`; text helpers renamed | `MixEnergyConfigScreen` |
+| 1.21.6 | `renderWithTooltip`/`renderWithTooltipAndSubtitles` (and, from 26.1, `extractRenderStateWithTooltipAndSubtitles`) started calling `renderBackground`/`extractBackground` themselves before invoking the screen; calling it again crashes with "Can only blur once per frame" | `MixEnergyConfigScreen` |
+| 26.1 | `LightTexture` removed | `EnergyOrbRenderer` |
+| 26.1.2 (NeoForge) | `BlockEvent.BreakEvent` became `BreakBlockEvent`; this requires separate 26.1–26.1.1 and 26.1.2 jars | `PlayerEnergyManager` |

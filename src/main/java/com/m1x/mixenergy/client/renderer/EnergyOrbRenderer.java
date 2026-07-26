@@ -5,7 +5,7 @@ import com.m1x.mixenergy.common.entity.EnergyOrbEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
-// LightTexture was removed in 26.2, where renderers read the packed light coordinates
+// LightTexture was removed in 26.1, where renderers read the packed light coordinates
 // straight off the render state instead.
 //? if <26 {
 import net.minecraft.client.renderer.LightTexture;
@@ -69,7 +69,7 @@ public class EnergyOrbRenderer extends EntityRenderer<EnergyOrbEntity> {
     private static final float SIZE = 0.1f;
 
     /**
-     * Packed light coordinates for a fully lit quad. 26.2 removed the LightTexture class
+     * Packed light coordinates for a fully lit quad. 26.1 removed the LightTexture class
      * that named this value; the packing itself is unchanged.
      */
     //? if <26 {

@@ -42,6 +42,8 @@ stonecutter {
         version '1.21.8-neoforge', '1.21.8'
         version '1.21.10-neoforge', '1.21.10'
         version '1.21.11-neoforge', '1.21.11'
+        version '26.1.1-neoforge', '26.1.1'
+        version '26.1.2-neoforge', '26.1.2'
         version '26.2-neoforge', '26.2'
 
         // The state committed to git. Run "gradlew stonecutterReset" before committing.

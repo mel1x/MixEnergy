@@ -36,8 +36,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
-// BlockEvent.BreakEvent became a top-level BreakBlockEvent in 26.2.
-//? if >=26 {
+// BlockEvent.BreakEvent became a top-level BreakBlockEvent in NeoForge 26.1.2.
+//? if >=26.1.2 {
 /^import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 ^///?}
 *///?}
@@ -418,7 +418,7 @@ public final class PlayerEnergyManager {
     }
 
     @SubscribeEvent
-    //? if <26 {
+    //? if <26.1.2 {
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
     //?} else {
     /*public static void onBlockBreak(BreakBlockEvent event) {

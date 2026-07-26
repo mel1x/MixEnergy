@@ -11,7 +11,7 @@ import net.minecraft.Util;
 /*import net.minecraft.util.Util;
 *///?}
 import net.minecraft.client.Minecraft;
-// GuiGraphics was renamed to GuiGraphicsExtractor in 26.2, when GUI drawing became a
+// GuiGraphics was renamed to GuiGraphicsExtractor in 26.1, when GUI drawing became a
 // two-step extract-then-render pass. The drawing calls this class uses are unchanged.
 //? if <26 {
 import net.minecraft.client.gui.GuiGraphics;

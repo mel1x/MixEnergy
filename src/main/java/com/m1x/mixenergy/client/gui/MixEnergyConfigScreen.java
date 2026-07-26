@@ -10,7 +10,7 @@ import net.minecraft.Util;
 //?} else {
 /*import net.minecraft.util.Util;
 *///?}
-// GuiGraphics was renamed to GuiGraphicsExtractor in 26.2, when screen drawing became a
+// GuiGraphics was renamed to GuiGraphicsExtractor in 26.1, when screen drawing became a
 // two-step extract-then-render pass.
 //? if <26 {
 import net.minecraft.client.gui.GuiGraphics;
@@ -698,7 +698,7 @@ public class MixEnergyConfigScreen extends Screen {
         consumableRestoreSlider.setConfigValue(8.0);
     }
 
-    // Screen#render was replaced by extractRenderState in 26.2: the screen now records
+    // Screen#render was replaced by extractRenderState in 26.1: the screen now records
     // what to draw and the GUI renderer submits it later in the frame.
     //? if <26 {
     @Override
@@ -722,7 +722,7 @@ public class MixEnergyConfigScreen extends Screen {
         //
         // From 1.21.6 the vanilla wrapper that calls this method (renderWithTooltip, later
         // renderWithTooltipAndSubtitles, and extractRenderStateWithTooltipAndSubtitles on
-        // 26.2) already calls renderBackground/extractBackground itself before invoking
+        // 26.1+) already calls renderBackground/extractBackground itself before invoking
         // this method - calling it again here throws "Can only blur once per frame" - so
         // for those versions the world behind is blurred regardless of what happens here.
         // renderTransparentBackground was only added in 1.20.2, so 1.20.1 uses its own
@@ -853,7 +853,7 @@ public class MixEnergyConfigScreen extends Screen {
         });
     }
 
-    // The text drawing methods were renamed in 26.2: drawCenteredString became
+    // The text drawing methods were renamed in 26.1: drawCenteredString became
     // centeredText and drawString became text. These wrappers keep the call sites shared.
     //? if <26 {
     private void centeredText(GuiGraphics graphics, Component text, int x, int y, int color) {
@@ -1183,7 +1183,7 @@ public class MixEnergyConfigScreen extends Screen {
 
     @Override
     public void onClose() {
-        // Minecraft#setScreen was renamed to setScreenAndShow in 26.2.
+        // Minecraft#setScreen was renamed to setScreenAndShow in 26.1.
         //? if <26 {
         minecraft.setScreen(parentScreen);
         //?} else {
